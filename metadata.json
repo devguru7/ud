@@ -1,0 +1,6 @@
+{
+  "name": "UDEA Pulse — Campus Event OS",
+  "description": "UDEA Pulse v3.0 — Campus event discovery, Boshlik room booking, dynamic club role delegation, campus posts & Telegram Mini App for the University of Digital Economics and Agrotechnologies (UDEA), Tashkent.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
