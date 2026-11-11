@@ -45,6 +45,7 @@ import {
   buildICS,
   downloadFile,
   minutesFromTime,
+  timeFromMinutes,
 } from './utils';
 import {
   canManage,
@@ -57,6 +58,7 @@ import {
   auth,
   db,
   doc,
+  getDoc,
   firebaseSignOut,
   googleProvider,
   handleFirestoreError,
@@ -64,6 +66,7 @@ import {
   OperationType,
   serverTimestamp,
   setDoc,
+  updateDoc,
   signInWithPopup,
   User,
 } from '../firebase';
@@ -293,6 +296,9 @@ interface AppContextValue {
   editingEventId: string | null;
   openEditEvent: (eventId: string) => void;
   clearEditingEvent: () => void;
+  studioPreset: { roomId?: string; date?: string; startTime?: string } | null;
+  openStudioWithPreset: (preset: { roomId?: string; date?: string; startTime?: string }) => void;
+  clearStudioPreset: () => void;
   activePostModal: PostModalState | null;
   openPostModal: (opts?: PostModalState) => void;
   closePostModal: () => void;
@@ -388,6 +394,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [modal, setModal] = useState<ModalState | null>(null);
   const [drawerEventId, setDrawerEventId] = useState<string | null>(null);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [studioPreset, setStudioPreset] = useState<{ roomId?: string; date?: string; startTime?: string } | null>(null);
   const [activePostModal, setActivePostModal] = useState<PostModalState | null>(null);
   const [roleModalClubId, setRoleModalClubId] = useState<string | null>(null);
   const [certificateTicketId, setCertificateTicketId] = useState<string | null>(null);
@@ -412,12 +419,79 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
       setFirebaseUser(u);
-      if (u) setCloudSyncStatus('synced');
-      else setCloudSyncStatus('idle');
+      if (u) {
+        setCloudSyncStatus('syncing');
+        try {
+          const snap = await getDoc(doc(db, 'workspaces', u.uid));
+          if (snap.exists()) {
+            const data = snap.data();
+            if (typeof data.payloadJson === 'string') {
+              const parsed = JSON.parse(data.payloadJson) as Partial<PersistedState>;
+              if (parsed && Array.isArray(parsed.events) && parsed.events.length > 0) {
+                setState((prev) => ({
+                  ...prev,
+                  ...parsed,
+                  personaId: typeof data.personaId === 'string' ? data.personaId : prev.personaId,
+                  theme: data.theme === 'dark' || data.theme === 'light' ? data.theme : prev.theme,
+                  uiLang: data.uiLang === 'EN' || data.uiLang === 'UZ' || data.uiLang === 'RU' ? data.uiLang : prev.uiLang,
+                }));
+              }
+            }
+          }
+          setCloudSyncStatus('synced');
+        } catch {
+          setCloudSyncStatus('synced');
+        }
+      } else {
+        setCloudSyncStatus('idle');
+      }
     });
     return () => unsub();
+  }, []);
+
+  // Telegram Mini App WebApp SDK & Deep-Link Start Params
+  useEffect(() => {
+    const tg = (window as unknown as {
+      Telegram?: {
+        WebApp?: {
+          ready?: () => void;
+          expand?: () => void;
+          colorScheme?: 'light' | 'dark';
+          initDataUnsafe?: {
+            start_param?: string;
+            user?: { id?: number; first_name?: string; last_name?: string; username?: string };
+          };
+        };
+      };
+    }).Telegram?.WebApp;
+
+    if (tg) {
+      try {
+        tg.ready?.();
+        tg.expand?.();
+      } catch {
+        /* ignore outside Telegram WebView */
+      }
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const startParam = params.get('startapp') || tg?.initDataUnsafe?.start_param || '';
+    if (startParam.startsWith('event_')) {
+      const targetEventId = startParam.slice('event_'.length);
+      if (targetEventId) {
+        setDrawerEventId(targetEventId);
+      }
+    } else if (startParam.startsWith('post_')) {
+      setExploreMode('posts');
+    } else if (startParam.startsWith('checkin_')) {
+      const targetEventId = startParam.slice('checkin_'.length);
+      if (targetEventId) {
+        setOrganizerEventId(targetEventId);
+        setView('organizer');
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -709,27 +783,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     const uid = auth.currentUser.uid;
     const path = `workspaces/${uid}`;
+    const workspaceRef = doc(db, 'workspaces', uid);
     try {
       setCloudSyncStatus('syncing');
-      await setDoc(doc(db, 'workspaces', uid), {
-        ownerUid: uid,
-        personaId: state.personaId,
-        theme: state.theme,
-        uiLang: state.uiLang ?? 'EN',
-        payloadJson: JSON.stringify({
-          followedClubs: state.followedClubs,
-          savedEventIds: state.savedEventIds ?? [],
-          ticketsCount: state.tickets.length,
-          eventsCount: state.events.length,
-        }).slice(0, 800000),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      const payloadJson = JSON.stringify(state).slice(0, 850000);
+      const existingSnap = await getDoc(workspaceRef);
+      if (existingSnap.exists()) {
+        await updateDoc(workspaceRef, {
+          personaId: state.personaId,
+          theme: state.theme,
+          uiLang: state.uiLang ?? 'EN',
+          payloadJson,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(workspaceRef, {
+          ownerUid: uid,
+          personaId: state.personaId,
+          theme: state.theme,
+          uiLang: state.uiLang ?? 'EN',
+          payloadJson,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
       setCloudSyncStatus('synced');
       pushToast({
         tone: 'success',
         title: 'Synced to Firestore',
-        message: 'Your UDEA Pulse passes, roles and preferences are backed up to Firebase.',
+        message: 'Your full UDEA Pulse workspace (events, passes, roles & preferences) is backed up to Firebase.',
       });
     } catch (error) {
       setCloudSyncStatus('error');
@@ -754,6 +836,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setMobile(false);
     setDrawerEventId(null);
     setEditingEventId(null);
+    setStudioPreset(null);
     setActivePostModal(null);
     setRoleModalClubId(null);
     setCertificateTicketId(null);
@@ -761,7 +844,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setToasts([]);
     pushToast({
       tone: 'success',
-      title: 'Demo state reset to v3.5',
+      title: 'Demo state reset to v4.0',
       message: 'Boshlik rooms, delegated club roles, campus posts, tickets and approvals restored.',
     });
   };
@@ -774,11 +857,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const openEditEvent = (eventId: string) => {
     setEditingEventId(eventId);
+    setStudioPreset(null);
     setDrawerEventId(null);
     setView('studio');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const clearEditingEvent = () => setEditingEventId(null);
+
+  const openStudioWithPreset = (preset: { roomId?: string; date?: string; startTime?: string }) => {
+    setEditingEventId(null);
+    setStudioPreset(preset);
+    setDrawerEventId(null);
+    setView('studio');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const clearStudioPreset = () => setStudioPreset(null);
 
   const openPostModal = (opts: PostModalState = {}) => {
     setActivePostModal(opts);
@@ -1046,31 +1139,66 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!event) return;
     const entry = event.waitlistRoster.find((w) => w.id === waitlistId);
     if (!entry) return;
+    const promotedUserId = waitlistId.startsWith('wl_') ? waitlistId.slice(3) : null;
 
-    setState((prev) => ({
-      ...prev,
-      events: prev.events.map((e) => {
-        if (e.id !== eventId) return e;
-        return {
-          ...e,
-          capacity: Math.max(e.capacity, e.registeredCount + 1),
-          registeredCount: e.registeredCount + 1,
-          waitlistCount: Math.max(0, e.waitlistCount - 1),
-          waitlistRoster: e.waitlistRoster.filter((w) => w.id !== waitlistId),
-          attendees: [
-            ...e.attendees,
-            {
-              id: entry.id,
-              name: entry.name,
-              programme: entry.programme,
-              programmeShort: entry.programmeShort,
-              telegram: entry.telegram,
-              color: '#10B981',
-            },
-          ],
-        };
-      }),
-    }));
+    setState((prev) => {
+      const targetTicket = prev.tickets.find(
+        (t) =>
+          t.eventId === eventId &&
+          t.status === 'waitlisted' &&
+          (!promotedUserId || t.userId === promotedUserId),
+      );
+      return {
+        ...prev,
+        tickets: prev.tickets.map((t) => {
+          if (targetTicket && t.ticketId === targetTicket.ticketId) {
+            return {
+              ...t,
+              status: 'confirmed',
+              seatNumber: event.registeredCount + 1,
+              waitlistPosition: undefined,
+              qrHash: randomHash('UDEA-PASS'),
+            };
+          }
+          if (t.eventId === eventId && t.status === 'waitlisted' && t.waitlistPosition) {
+            return {
+              ...t,
+              waitlistPosition: Math.max(1, t.waitlistPosition - 1),
+            };
+          }
+          return t;
+        }),
+        events: prev.events.map((e) => {
+          if (e.id !== eventId) return e;
+          return {
+            ...e,
+            capacity: Math.max(e.capacity, e.registeredCount + 1),
+            registeredCount: e.registeredCount + 1,
+            waitlistCount: Math.max(0, e.waitlistCount - 1),
+            waitlistRoster: e.waitlistRoster.filter((w) => w.id !== waitlistId),
+            attendees: [
+              ...e.attendees,
+              {
+                id: promotedUserId ? `att_${promotedUserId}` : entry.id,
+                name: entry.name,
+                programme: entry.programme,
+                programmeShort: entry.programmeShort,
+                telegram: entry.telegram,
+                color: '#10B981',
+              },
+            ],
+          };
+        }),
+      };
+    });
+
+    pushNotification({
+      userId: promotedUserId ?? 'all',
+      title: `🎟️ Promoted from Waitlist: ${entry.name}`,
+      message: `${entry.name} now holds a confirmed seat and QR pass for “${event.title}”.`,
+      tone: 'success',
+      linkEventId: event.id,
+    });
 
     pushToast({
       tone: 'success',
@@ -1728,6 +1856,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ensureStudentInState(tm.userId, tm.name, tm.telegram, tm.programme, tm.programme);
     });
 
+    const startMins = minutesFromTime(draft.startTime);
+    const endMins = minutesFromTime(draft.endTime);
+    const mainSessionTime = timeFromMinutes(Math.min(endMins - 15, startMins + 15));
+    const wrapUpTime = timeFromMinutes(Math.max(startMins + 30, endMins - 20));
+
     const event: EventItem = {
       id,
       title: draft.title.trim(),
@@ -1743,7 +1876,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ? draft.agenda
           : [
               { time: draft.startTime, title: 'Doors open & QR check-in', speaker: persona.name },
-              { time: draft.startTime, title: 'Main session & interactive workshop', speaker: hostName },
+              { time: mainSessionTime, title: 'Main session & interactive workshop', speaker: hostName },
+              { time: wrapUpTime, title: 'Q&A, networking & certificate verification', speaker: hostName },
             ],
       attachments: draft.attachments ?? [],
       squads: [],
@@ -2250,6 +2384,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     editingEventId,
     openEditEvent,
     clearEditingEvent,
+    studioPreset,
+    openStudioWithPreset,
+    clearStudioPreset,
     activePostModal,
     openPostModal,
     closePostModal,

@@ -1255,7 +1255,7 @@
     flex-wrap: wrap;
   }
   .topbar-utils .mini-toggle,
-  .topbar-utils .quick-select {
+  .topbar-utils .zone-select {
     display: none;
   }
   .persona-wrap {
@@ -1843,6 +1843,10 @@
   border-top: 1px solid var(--border-hairline);
 }
 
+.event-cover .poster-top {
+  padding-right: 38px;
+}
+
 .bookmark-btn {
   position: absolute;
   top: 10px;
@@ -1869,12 +1873,10 @@
   color: #fff;
 }
 .card-quick-tools {
-  position: absolute;
-  left: 10px;
-  bottom: 10px;
-  z-index: 5;
-  display: flex;
-  gap: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
 }
 .card-quick-tools button {
   display: inline-flex;
@@ -1882,16 +1884,18 @@
   gap: 4px;
   padding: 4px 7px;
   border-radius: 7px;
-  background: rgba(12, 14, 18, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.26);
-  color: #fff;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;
-  backdrop-filter: blur(10px);
+  transition: all 0.15s;
 }
 .card-quick-tools button:hover {
-  background: rgba(16, 185, 129, 0.85);
+  background: var(--signal-green);
+  border-color: var(--signal-green);
+  color: #fff;
 }
 
 /* ---------- Boshlik Rooms Timeline ---------- */
@@ -1922,10 +1926,17 @@
 }
 .timeline-ruler {
   display: grid;
-  grid-template-columns: 190px repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border-hairline);
+}
+.timeline-track-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
 }
 .timeline-rows {
   display: flex;
@@ -1934,7 +1945,7 @@
 }
 .timeline-room-row {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) auto;
+  grid-template-columns: 190px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
 }
@@ -1958,14 +1969,28 @@
   border: 1px solid var(--border-hairline);
   overflow: hidden;
 }
-.timeline-empty-slot {
-  position: absolute;
-  inset: 0;
+.timeline-empty-slot,
+.timeline-free-btn {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
-  padding-left: 12px;
+  padding: 0 12px;
   font-size: 11px;
+  font-weight: 600;
   color: var(--text-tertiary);
+  border-radius: 9px;
+  border: 1px dashed transparent;
+  transition: all 0.16s;
+  text-align: left;
+}
+.timeline-free-btn:hover {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.45);
+}
+[data-theme='dark'] .timeline-free-btn:hover {
+  color: #34d399;
 }
 .timeline-event-block {
   position: absolute;
@@ -1982,6 +2007,11 @@
   text-align: left;
   overflow: hidden;
   transition: transform 0.15s;
+}
+.timeline-event-block.is-pending {
+  border-style: dashed;
+  border-color: var(--signal-amber);
+  background: rgba(245, 158, 11, 0.16);
 }
 .timeline-event-block:hover {
   transform: scale(1.01);

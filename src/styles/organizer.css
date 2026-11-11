@@ -999,8 +999,18 @@
 .phone-frame .section-header {
   margin: 20px 0 12px;
 }
-.phone-frame .drawer {
+.phone-frame .drawer,
+.app-shell.is-mobile .drawer {
   width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  align-self: flex-end;
+  border-radius: 28px 28px 0 0;
+  max-height: 88vh;
+}
+.app-shell.is-mobile .drawer-layer {
+  align-items: flex-end;
+  justify-content: center;
 }
 .phone-frame .toast-stack {
   right: auto;

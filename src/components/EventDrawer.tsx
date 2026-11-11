@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { EventItem } from '../types';
 import { useApp, TG_BOT } from '../lib/store';
 import { Avatar, CapacityBar, CategoryBadge, Icon, Mono, Poster } from './UI';
@@ -25,8 +26,11 @@ const TABS = [
 export default function EventDrawer() {
   const app = useApp();
   const event = app.state.events.find((e) => e.id === app.drawerEventId);
-  if (!event) return null;
-  return <DrawerBody key={event.id} event={event} />;
+  return (
+    <AnimatePresence>
+      {event && <DrawerBody key={event.id} event={event} />}
+    </AnimatePresence>
+  );
 }
 
 function DrawerBody({ event }: { event: EventItem }) {
@@ -60,13 +64,24 @@ function DrawerBody({ event }: { event: EventItem }) {
   const visibleStaff = event.teamMembers.filter((m) => m.showOnEventPage);
 
   return (
-    <div className="drawer-layer" onClick={close}>
-      <div
+    <motion.div
+      className="drawer-layer"
+      onClick={close}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+    >
+      <motion.div
         className="drawer"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={event.title}
+        initial={app.mobile ? { y: 80, opacity: 0.8 } : { x: 60, opacity: 0.8 }}
+        animate={{ x: 0, y: 0, opacity: 1 }}
+        exit={app.mobile ? { y: 80, opacity: 0 } : { x: 60, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
       >
         <div className="drawer-head">
           <Poster event={event} showTitle />
@@ -524,8 +539,8 @@ function DrawerBody({ event }: { event: EventItem }) {
           {tab === 'qa' && <QATab event={event} manage={manage} />}
           {tab === 'host' && <HostTab event={event} manage={manage} />}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

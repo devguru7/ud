@@ -215,7 +215,7 @@ export default function Organizer() {
               <button className="btn btn-primary" onClick={() => app.setView('studio')}>
                 Open Host Event Studio
               </button>
-              <button className="btn btn-teal" onClick={() => app.setPersona('usr_4')}>
+              <button className="btn btn-teal" onClick={() => app.setPersona('usr_1')}>
                 Switch to Soliyev Firdavs (Coordinator)
               </button>
             </div>

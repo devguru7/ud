@@ -1,4 +1,5 @@
 import React from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { AppProvider, useApp } from './lib/store';
 import Topbar, { TelegramHeader } from './components/Topbar';
 import Explore from './components/Explore';
@@ -98,11 +99,21 @@ function Shell() {
         {app.mobile && <TelegramHeader />}
         <Topbar />
         <main className="page">
-          {app.view === 'explore' && <Explore />}
-          {app.view === 'clubs' && <Clubs />}
-          {app.view === 'passes' && <Passes />}
-          {app.view === 'organizer' && <Organizer />}
-          {app.view === 'studio' && <HostStudio />}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={app.view}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              {app.view === 'explore' && <Explore />}
+              {app.view === 'clubs' && <Clubs />}
+              {app.view === 'passes' && <Passes />}
+              {app.view === 'organizer' && <Organizer />}
+              {app.view === 'studio' && <HostStudio />}
+            </motion.div>
+          </AnimatePresence>
         </main>
         {app.mobile ? <MobileNav /> : <Footer />}
       </div>

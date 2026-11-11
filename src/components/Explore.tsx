@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../lib/store';
 import EventCard from './EventCard';
 import { PostCard } from './Posts';
@@ -393,10 +394,12 @@ function BoshlikRoomsTimeline({ selectedDate }: { selectedDate: string }) {
           <button
             type="button"
             className="btn btn-primary btn-xs"
-            onClick={() => {
-              app.clearEditingEvent();
-              app.setView('studio');
-            }}
+            onClick={() =>
+              app.openStudioWithPreset({
+                date: selectedDate,
+                startTime: '14:00',
+              })
+            }
           >
             <Icon name="plus" size={12} /> Book a Room
           </button>
@@ -430,10 +433,13 @@ function BoshlikRoomsTimeline({ selectedDate }: { selectedDate: string }) {
                   <button
                     type="button"
                     className="timeline-free-btn"
-                    onClick={() => {
-                      app.clearEditingEvent();
-                      app.setView('studio');
-                    }}
+                    onClick={() =>
+                      app.openStudioWithPreset({
+                        roomId: room.id,
+                        date: selectedDate,
+                        startTime: '14:00',
+                      })
+                    }
                   >
                     ✓ Available all day (09:00–21:00) — Click to book {room.code}
                   </button>
@@ -619,9 +625,19 @@ export default function Explore() {
 
         <DateRibbon />
 
-        {showRoomsTimeline && (
-          <BoshlikRoomsTimeline selectedDate={filters.date ?? isoOffset(0)} />
-        )}
+        <AnimatePresence initial={false}>
+          {showRoomsTimeline && (
+            <motion.div
+              key="rooms-timeline"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              <BoshlikRoomsTimeline selectedDate={filters.date ?? isoOffset(0)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Part 1: Boshlik Venue Zone Filter Ribbon */}
         <div className="zone-ribbon" role="group" aria-label="Boshlik Campus Venue Zones">

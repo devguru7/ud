@@ -11,8 +11,8 @@ import {
 import { dayLabel, longDate, minutesFromTime, isoDate } from '../lib/utils';
 
 const BASE_BADGES: Record<string, string[]> = {
-  usr_4: ['FinTech Case Coordinator', 'Practice Session Lead', 'QR Door Verifier'],
-  usr_1: ['FinTech Explorer', 'Hackathon Finalist', 'Debate Speaker'],
+  usr_1: ['FinTech Case Coordinator', 'Practice Session Lead', 'QR Door Verifier'],
+  usr_4: ['Campus Explorer', 'Data Analytics Cohort', 'Debate Speaker'],
   usr_2: ['Data Analytics Lead', 'Hackathon Mentor', 'Community Builder'],
   usr_3: ['Campus Operations', 'Room Approvals', 'Event Safety'],
 };

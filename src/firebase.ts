@@ -10,8 +10,10 @@ import {
 import {
   getFirestore,
   doc,
+  getDoc,
   getDocFromServer,
   setDoc,
+  updateDoc,
   serverTimestamp,
   onSnapshot,
 } from 'firebase/firestore';
@@ -94,7 +96,9 @@ export {
   firebaseSignOut,
   onAuthStateChanged,
   doc,
+  getDoc,
   setDoc,
+  updateDoc,
   serverTimestamp,
   onSnapshot,
 };

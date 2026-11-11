@@ -136,7 +136,7 @@ export default function Topbar() {
             <span>{app.mobile ? 'Desktop' : 'TG Mini App'}</span>
           </button>
 
-          <label className="quick-select" title="Boshlik Campus Venue Zone filter">
+          <label className="quick-select zone-select" title="Boshlik Campus Venue Zone filter">
             <Icon name="pin" size={14} />
             <select
               value={app.state.filters.zone}
@@ -151,7 +151,7 @@ export default function Topbar() {
             </select>
           </label>
 
-          <label className="quick-select" title="Interface Language (EN / UZ / RU)">
+          <label className="quick-select lang-select" title="Interface Language (EN / UZ / RU)">
             <Icon name="globe" size={14} />
             <select
               value={app.uiLang}
@@ -167,7 +167,7 @@ export default function Topbar() {
           </label>
 
           {/* Notification Bell Popover */}
-          <div className="persona-wrap" ref={notifRef}>
+          <div className="persona-wrap" ref={!app.mobile ? notifRef : undefined}>
             <button
               className="icon-btn notif-btn"
               onClick={() => {
@@ -183,7 +183,7 @@ export default function Topbar() {
               )}
             </button>
 
-            {notifOpen && (
+            {notifOpen && !app.mobile && (
               <div className="persona-menu notif-popover">
                 <div className="persona-menu-head">
                   <div className="row-between">
@@ -241,7 +241,7 @@ export default function Topbar() {
           </button>
 
           {/* Persona / Account Switcher */}
-          <div className="persona-wrap" ref={menuRef}>
+          <div className="persona-wrap" ref={!app.mobile ? menuRef : undefined}>
             <button
               className={`persona-btn ${personaOpen ? 'is-open' : ''}`}
               onClick={() => setPersonaOpen((v) => !v)}
@@ -256,7 +256,7 @@ export default function Topbar() {
               <Icon name="chevron" size={13} className="rot-90" />
             </button>
 
-            {personaOpen && (
+            {personaOpen && !app.mobile && (
               <div className="persona-menu">
                 <div className="persona-menu-head">
                   <div className="row-between">
@@ -332,7 +332,7 @@ export default function Topbar() {
                 <div className="persona-cloud-bar">
                   {app.firebaseUser ? (
                     <div className="row-between" style={{ width: '100%', gap: 8 }}>
-                      <span className="mono subtle" style={{ color: 'var(--emerald)' }}>
+                      <span className="mono subtle" style={{ color: 'var(--signal-green)' }}>
                         ☁️ {app.firebaseUser.email?.split('@')[0]}
                       </span>
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -359,7 +359,7 @@ export default function Topbar() {
                   <button className="link-btn" onClick={app.resetDemo}>
                     <Icon name="refresh" size={14} /> Reset demo state
                   </button>
-                  <span className="mono subtle">FIRESTORE + LOCAL V3.5</span>
+                  <span className="mono subtle">FIRESTORE + LOCAL V4.0</span>
                 </div>
               </div>
             )}
@@ -382,7 +382,74 @@ export default function Topbar() {
           </button>
         </div>
 
-        <div className="mobile-topbar-utils">
+        <div className="mobile-topbar-utils" ref={app.mobile ? menuRef : undefined}>
+          <label className="quick-select lang-select" title="Interface Language (EN / UZ / RU)" style={{ height: 32, padding: '0 6px' }}>
+            <Icon name="globe" size={13} />
+            <select
+              value={app.uiLang}
+              onChange={(e) => app.setUiLang(e.target.value as Lang)}
+              aria-label="Mobile Interface Language"
+              style={{ fontSize: 11, paddingRight: 14 }}
+            >
+              {UI_LANGS.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="persona-wrap" ref={app.mobile ? notifRef : undefined}>
+            <button
+              className="icon-btn notif-btn"
+              onClick={() => {
+                setNotifOpen((v) => !v);
+                if (!notifOpen) app.markAllNotificationsRead();
+              }}
+              aria-label="Mobile Campus Notifications"
+              title="Campus Notifications & Role Updates"
+            >
+              <Icon name="bell" size={16} />
+              {app.unreadNotificationsCount > 0 && (
+                <span className="notif-dot">{app.unreadNotificationsCount}</span>
+              )}
+            </button>
+            {notifOpen && app.mobile && (
+              <div className="persona-menu notif-popover" style={{ right: -60, width: 300 }}>
+                <div className="persona-menu-head">
+                  <div className="row-between">
+                    <span className="mono">CAMPUS NOTIFICATIONS</span>
+                    <button type="button" className="link-btn" onClick={app.markAllNotificationsRead}>
+                      Mark all read
+                    </button>
+                  </div>
+                  <p>Live updates for {app.persona.name}</p>
+                </div>
+                <div className="notif-list">
+                  {myNotifications.slice(0, 6).map((n) => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      className={`notif-item ${n.read ? '' : 'is-unread'}`}
+                      onClick={() => {
+                        setNotifOpen(false);
+                        if (n.linkEventId) app.openEvent(n.linkEventId);
+                        else if (n.linkClubId) {
+                          app.setView('clubs');
+                          app.openRoleModal(n.linkClubId);
+                        }
+                      }}
+                    >
+                      <div className="row-between">
+                        <strong>{n.title}</strong>
+                        <Mono>{relativeTime(n.createdAt)}</Mono>
+                      </div>
+                      <p>{n.message}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <button
             className="icon-btn"
             onClick={() => app.openPostModal(canPublish ? {} : { defaultType: 'discussion' })}
@@ -407,6 +474,37 @@ export default function Topbar() {
           <button className="avatar-btn" onClick={() => setPersonaOpen((v) => !v)} aria-label="Switch persona">
             <Avatar name={app.persona.name} color={app.persona.color} size={28} />
           </button>
+          {personaOpen && app.mobile && (
+            <div className="persona-menu" style={{ right: 0, width: 300 }}>
+              <div className="persona-menu-head">
+                <div className="row-between">
+                  <span className="mono">SWITCH ACCOUNT ({app.personas.length})</span>
+                  <button type="button" className="link-btn" onClick={() => setShowNewAccount((v) => !v)}>
+                    {showNewAccount ? 'Cancel' : '+ New'}
+                  </button>
+                </div>
+              </div>
+              <div className="persona-scroll-list">
+                {app.personas.map((p) => (
+                  <button
+                    key={p.id}
+                    className={`persona-option ${p.id === app.persona.id ? 'is-active' : ''}`}
+                    onClick={() => {
+                      app.setPersona(p.id);
+                      setPersonaOpen(false);
+                    }}
+                  >
+                    <Avatar name={p.name} color={p.color} size={28} />
+                    <span>
+                      <strong>{p.name}</strong>
+                      <em>{personaSubtitle(p, app.state.clubs)}</em>
+                    </span>
+                    {p.id === app.persona.id && <Icon name="check" size={14} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>

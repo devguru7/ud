@@ -149,9 +149,23 @@ export default function HostStudio() {
         teamMembers: editingEvent.teamMembers ?? [],
       });
     } else {
-      setDraft(emptyDraft(persona.clubId ?? 'club_fintech'));
+      const base = emptyDraft(persona.clubId ?? 'club_fintech');
+      if (app.studioPreset) {
+        const start = app.studioPreset.startTime ?? base.startTime;
+        const end = timeFromMinutes(Math.min(22 * 60, minutesFromTime(start) + 120));
+        setDraft({
+          ...base,
+          campus: 'Boshlik',
+          roomId: app.studioPreset.roomId ?? base.roomId,
+          date: app.studioPreset.date ?? base.date,
+          startTime: start,
+          endTime: end,
+        });
+      } else {
+        setDraft(base);
+      }
     }
-  }, [editingEvent?.id, persona.id]);
+  }, [editingEvent?.id, persona.id, app.studioPreset]);
 
   const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -238,7 +252,7 @@ export default function HostStudio() {
       category: 'fintech',
       language: 'EN',
       hostClubId: 'club_fintech',
-      coHostClubIds: ['club_data'],
+      coHostClubIds: ['club_agrobank'],
       coverStyle: 'emerald',
       coverImage: '',
       pattern: 'grid',

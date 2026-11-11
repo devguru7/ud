@@ -335,14 +335,14 @@ service cloud.firestore {
         isValidId(userId) &&
         isValidWorkspace(incoming()) &&
         incoming().ownerUid == existing().ownerUid &&
-        incoming().createdAt == existing().createdAt &&
+        (incoming().createdAt == existing().createdAt || incoming().createdAt == request.time) &&
         incoming().updatedAt == request.time &&
         (
           isAdmin() ||
           (
             request.auth.uid == userId &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'personaId', 'theme', 'uiLang', 'payloadJson', 'updatedAt'
+              'personaId', 'theme', 'uiLang', 'payloadJson', 'createdAt', 'updatedAt'
             ])
           )
         );
