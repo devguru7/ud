@@ -15,7 +15,9 @@ export const MONTHS = [
   'December',
 ];
 export const MONTHS_SHORT = MONTHS.map((m) => m.slice(0, 3).toUpperCase());
-export const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+// Monday-first weekday headers for Uzbekistan / European academic calendars
+export const WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+const JS_WEEKDAYS_SHORT = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 export const WEEKDAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -65,7 +67,7 @@ export function parseDateTime(date: string, time: string): Date {
 
 export function dayLabel(iso: string): string {
   const d = fromISO(iso);
-  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+  return `${JS_WEEKDAYS_SHORT[d.getDay()]} ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
 }
 
 export function longDate(iso: string): string {
@@ -80,7 +82,8 @@ export function shortDate(iso: string): string {
 
 export function monthMatrix(year: number, month: number): (string | null)[] {
   const first = new Date(year, month, 1);
-  const start = first.getDay();
+  // Monday = 0 ... Sunday = 6
+  const start = (first.getDay() + 6) % 7;
   const days = new Date(year, month + 1, 0).getDate();
   const cells: (string | null)[] = [];
   for (let i = 0; i < start; i++) cells.push(null);
@@ -110,8 +113,14 @@ export function initials(name: string): string {
 }
 
 export function firstName(name: string): string {
-  const parts = name.split(/\s+/);
-  return parts.length > 1 ? parts[1] : parts[0];
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'Student';
+  if (parts.length === 1) return parts[0];
+  const surnamePattern = /(ov|ova|ev|eva|yev|yeva)$/i;
+  if (surnamePattern.test(parts[0]) && !surnamePattern.test(parts[1])) {
+    return parts[1];
+  }
+  return parts[0];
 }
 
 export function eventSeatsLeft(ev: EventItem): number {
@@ -133,12 +142,17 @@ export function pct(part: number, total: number): number {
   return Math.min(100, Math.round((part / total) * 100));
 }
 
+/**
+ * Converts a Tashkent local date+time (Asia/Tashkent, UTC+05:00) into an RFC5545 UTC timestamp.
+ */
 export function icsTimestamp(date: string, time: string): string {
-  const d = parseDateTime(date, time);
-  const utc = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return `${utc.getFullYear()}${pad(utc.getMonth() + 1)}${pad(utc.getDate())}T${pad(
-    utc.getHours(),
-  )}${pad(utc.getMinutes())}00Z`;
+  const [y, m, d] = date.split('-').map(Number);
+  const [hh, mm] = time.split(':').map(Number);
+  const tashkentUtcMs = Date.UTC(y || 2026, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0) - 5 * 3600000;
+  const utc = new Date(tashkentUtcMs);
+  return `${utc.getUTCFullYear()}${pad(utc.getUTCMonth() + 1)}${pad(utc.getUTCDate())}T${pad(
+    utc.getUTCHours(),
+  )}${pad(utc.getUTCMinutes())}00Z`;
 }
 
 export function buildICS(ev: EventItem, room: Room | undefined): string {
@@ -223,8 +237,8 @@ export function randomTicketId(): string {
   return `tkt_${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
 }
 
-export function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
-  return aStart < bEnd && bStart < aEnd;
+export function uid(prefix = 'id'): string {
+  return `${prefix}_${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
 }
 
 export function minutesFromTime(time: string): number {
@@ -236,6 +250,10 @@ export function timeFromMinutes(total: number): string {
   const h = Math.floor(total / 60) % 24;
   const m = total % 60;
   return `${pad(h)}:${pad(m)}`;
+}
+
+export function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  return minutesFromTime(aStart) < minutesFromTime(bEnd) && minutesFromTime(bStart) < minutesFromTime(aEnd);
 }
 
 export function relativeTime(isoTimestamp: string): string {

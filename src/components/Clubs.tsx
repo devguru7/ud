@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import type { Category, PermissionFlag } from '../types';
+import type { Category, CustomClubRole, PermissionFlag } from '../types';
 import { useApp } from '../lib/store';
-import { ROOMS, STUDENT_DIRECTORY } from '../lib/seed';
+import { ROOMS } from '../lib/seed';
 import { Avatar, CategoryBadge, Icon, Mono, SectionHeader } from './UI';
 import { CATEGORY_SHORT, dayLabel, isoDate } from '../lib/utils';
 import { PERMISSION_META } from '../lib/labels';
@@ -15,6 +15,14 @@ export default function Clubs() {
   const today = isoDate();
   const approved = app.state.events.filter((e) => e.approvalStatus === 'approved' && !e.past);
 
+  const [showCreateClub, setShowCreateClub] = useState(false);
+  const [newClubName, setNewClubName] = useState('');
+  const [newClubShort, setNewClubShort] = useState('');
+  const [newClubCat, setNewClubCat] = useState<Category>('tech');
+  const [newClubDesc, setNewClubDesc] = useState('');
+  const [newClubPartner, setNewClubPartner] = useState('Coventry University');
+  const [newClubColor, setNewClubColor] = useState('#8B5CF6');
+
   const nextEventFor = (clubId: string) =>
     approved
       .filter((e) => (e.hostClubId === clubId || e.coHostClubIds?.includes(clubId)) && e.date >= today)
@@ -22,6 +30,23 @@ export default function Clubs() {
 
   const upcomingClubEvents = approved.filter((e) => e.hostClubId).length;
   const totalDelegated = app.state.clubs.reduce((acc, c) => acc + c.roster.length, 0);
+
+  const handleCreateClub = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newClubName.trim().length < 3) return;
+    app.createClub({
+      name: newClubName,
+      short: newClubShort || newClubName.slice(0, 14),
+      category: newClubCat,
+      description: newClubDesc || 'Official student society on UDEA Boshlik Campus.',
+      partner: newClubPartner,
+      color: newClubColor,
+    });
+    setNewClubName('');
+    setNewClubShort('');
+    setNewClubDesc('');
+    setShowCreateClub(false);
+  };
 
   return (
     <div className="clubs-view">
@@ -32,12 +57,93 @@ export default function Clubs() {
         action={
           <div className="feed-actions">
             <Mono>{app.state.followedClubs.length} FOLLOWED · {totalDelegated} DELEGATED COORDINATORS</Mono>
+            {app.persona.role === 'admin' && (
+              <button className="btn btn-primary btn-sm" onClick={() => setShowCreateClub((v) => !v)}>
+                <Icon name="plus" size={14} /> {showCreateClub ? 'Close Form' : '+ Launch New Club'}
+              </button>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={() => app.openPostModal()}>
               <Icon name="telegram" size={14} /> + Club Post
             </button>
           </div>
         }
       />
+
+      {showCreateClub && (
+        <form className="card form-card" onSubmit={handleCreateClub} style={{ marginBottom: 20 }}>
+          <div className="panel-head">
+            <div>
+              <span className="mono subtle">STUDENT UNION · LAUNCH NEW VERIFIED SOCIETY</span>
+              <h3>Create Official Boshlik Campus Club</h3>
+            </div>
+          </div>
+          <div className="field-row">
+            <label className="field">
+              <span className="field-label">Club Full Name *</span>
+              <input
+                value={newClubName}
+                onChange={(e) => setNewClubName(e.target.value)}
+                placeholder="e.g., UDEA AI & Data Science Society"
+                required
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Short Badge Name *</span>
+              <input
+                value={newClubShort}
+                onChange={(e) => setNewClubShort(e.target.value)}
+                placeholder="e.g., AI Society"
+                required
+              />
+            </label>
+          </div>
+          <div className="field-row">
+            <label className="field">
+              <span className="field-label">Category</span>
+              <select value={newClubCat} onChange={(e) => setNewClubCat(e.target.value as Category)}>
+                {ALL_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORY_SHORT[c]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Industry / Academic Partner</span>
+              <input
+                value={newClubPartner}
+                onChange={(e) => setNewClubPartner(e.target.value)}
+                placeholder="e.g., Coventry University / Agrobank"
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Brand Color</span>
+              <select value={newClubColor} onChange={(e) => setNewClubColor(e.target.value)}>
+                {ROLE_COLORS.map((col) => (
+                  <option key={col} value={col}>
+                    {col}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="field">
+            <span className="field-label">Mission & Campus Activities *</span>
+            <textarea
+              rows={2}
+              value={newClubDesc}
+              onChange={(e) => setNewClubDesc(e.target.value)}
+              placeholder="Describe regular workshops, competitions and Boshlik rooms used…"
+              required
+            />
+          </label>
+          <div className="feed-actions">
+            <button type="submit" className="btn btn-primary btn-sm">
+              <Icon name="check" size={14} /> Launch Verified Club
+            </button>
+          </div>
+        </form>
+      )}
 
       <div className="clubs-stats">
         <div className="clubs-stat">
@@ -72,6 +178,10 @@ export default function Clubs() {
             myPerms.includes('manage_roles') ||
             app.persona.role === 'admin' ||
             club.leadId === app.persona.id;
+          const canPublishClubPost =
+            myPerms.includes('publish_posts') ||
+            app.persona.role === 'admin' ||
+            club.leadId === app.persona.id;
 
           return (
             <article key={club.id} className={`club-card cat-${club.category} ${following ? 'is-following' : ''}`}>
@@ -94,7 +204,7 @@ export default function Clubs() {
               <div className="club-numbers">
                 <span><Mono>{club.members}</Mono> members</span>
                 <span className="dotsep" />
-                <span>{approved.filter((e) => e.hostClubId === club.id).length} events this fortnight</span>
+                <span>{approved.filter((e) => e.hostClubId === club.id || e.coHostClubIds?.includes(club.id)).length} events this fortnight</span>
                 {club.leadName && (
                   <>
                     <span className="dotsep" />
@@ -112,7 +222,7 @@ export default function Clubs() {
                     className="link-btn"
                     onClick={() => app.openRoleModal(club.id)}
                   >
-                    {canManageRoles ? 'Manage Roles →' : 'View Roles →'}
+                    {canManageRoles ? 'Manage Roles →' : 'View / Apply →'}
                   </button>
                 </div>
                 {club.roster.length === 0 ? (
@@ -122,11 +232,17 @@ export default function Clubs() {
                     {club.roster.map((m) => {
                       const roleObj = club.customRoles.find((r) => r.id === m.roleId);
                       return (
-                        <span key={m.id} className="roster-chip">
+                        <button
+                          key={m.id}
+                          type="button"
+                          className="roster-chip"
+                          onClick={() => app.setPersona(m.userId)}
+                          title={`Click to switch to ${m.userName} (${roleObj?.title ?? 'Coordinator'})`}
+                        >
                           <Avatar name={m.userName} color={roleObj?.badgeColor ?? club.color} size={20} />
                           <strong>{m.userName}</strong>
                           <span className="badge badge-sm badge-success">{roleObj?.title ?? 'Coordinator'}</span>
-                        </span>
+                        </button>
                       );
                     })}
                   </div>
@@ -163,14 +279,26 @@ export default function Clubs() {
                   className="btn btn-violet btn-sm"
                   onClick={() => app.openRoleModal(club.id)}
                 >
-                  <Icon name="shield" size={13} /> Manage Roles & Team
+                  <Icon name="shield" size={13} /> {canManageRoles ? 'Manage Roles & Team' : 'Roles & Apply'}
                 </button>
                 <button
                   className="btn btn-ghost btn-sm"
-                  onClick={() => app.openPostModal({ defaultClubId: club.id })}
+                  onClick={() => {
+                    app.setFilters({ clubId: club.id });
+                    app.setView('explore');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                 >
-                  <Icon name="telegram" size={13} /> + Post
+                  <Icon name="calendar" size={13} /> All Activity
                 </button>
+                {canPublishClubPost && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => app.openPostModal({ defaultClubId: club.id })}
+                  >
+                    <Icon name="telegram" size={13} /> + Post
+                  </button>
+                )}
               </div>
             </article>
           );
@@ -194,7 +322,8 @@ export function RoleManagerModal() {
 
   const [tab, setTab] = useState<'roster' | 'roles'>('roster');
 
-  // Role Architect state
+  // Role Architect state (supports both create and edit)
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [roleTitle, setRoleTitle] = useState('');
   const [badgeColor, setBadgeColor] = useState(ROLE_COLORS[0]);
   const [permissions, setPermissions] = useState<PermissionFlag[]>([
@@ -207,14 +336,21 @@ export function RoleManagerModal() {
   const [allowedCats, setAllowedCats] = useState<Category[]>([]);
 
   // Student Assignment state
-  const [selectedStudentId, setSelectedStudentId] = useState(STUDENT_DIRECTORY[0]?.id ?? 'usr_4');
+  const [selectedStudentId, setSelectedStudentId] = useState(app.directory[0]?.id ?? 'usr_4');
   const [customMode, setCustomMode] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customTelegram, setCustomTelegram] = useState('');
   const [customProgramme, setCustomProgramme] = useState('BSc Digital Economics · Y2');
   const [selectedRoleId, setSelectedRoleId] = useState('');
+  const [applyNote, setApplyNote] = useState('');
 
   if (!club) return null;
+
+  const myPerms = getUserPermissionsForClub(app.persona, club);
+  const canManageRoles =
+    myPerms.includes('manage_roles') ||
+    app.persona.role === 'admin' ||
+    club.leadId === app.persona.id;
 
   const activeRoleId = selectedRoleId || club.customRoles[0]?.id || '';
 
@@ -230,8 +366,17 @@ export function RoleManagerModal() {
     );
   };
 
-  const handleCreateRole = (e: React.FormEvent) => {
+  const startEditRole = (role: CustomClubRole) => {
+    setEditingRoleId(role.id);
+    setRoleTitle(role.title);
+    setBadgeColor(role.badgeColor || ROLE_COLORS[0]);
+    setPermissions([...role.permissions]);
+    setAllowedCats([...(role.allowedCategories ?? [])]);
+  };
+
+  const handleSaveRole = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageRoles) return;
     if (roleTitle.trim().length < 2) {
       app.pushToast({
         tone: 'warn',
@@ -248,17 +393,30 @@ export function RoleManagerModal() {
       });
       return;
     }
-    app.createClubRole(club.id, {
-      title: roleTitle.trim(),
-      badgeColor,
-      permissions,
-      allowedCategories: allowedCats.length > 0 ? allowedCats : undefined,
-    });
+    if (editingRoleId) {
+      app.updateClubRole(club.id, {
+        id: editingRoleId,
+        clubId: club.id,
+        title: roleTitle.trim(),
+        badgeColor,
+        permissions,
+        allowedCategories: allowedCats.length > 0 ? allowedCats : undefined,
+      });
+      setEditingRoleId(null);
+    } else {
+      app.createClubRole(club.id, {
+        title: roleTitle.trim(),
+        badgeColor,
+        permissions,
+        allowedCategories: allowedCats.length > 0 ? allowedCats : undefined,
+      });
+    }
     setRoleTitle('');
   };
 
   const handleAssignStudent = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageRoles) return;
     if (!activeRoleId) {
       app.pushToast({
         tone: 'warn',
@@ -287,7 +445,7 @@ export function RoleManagerModal() {
       setCustomName('');
       setCustomTelegram('');
     } else {
-      const stu = STUDENT_DIRECTORY.find((s) => s.id === selectedStudentId);
+      const stu = app.directory.find((s) => s.id === selectedStudentId);
       if (!stu) return;
       app.assignClubMember(club.id, {
         userId: stu.id,
@@ -298,6 +456,15 @@ export function RoleManagerModal() {
       });
     }
   };
+
+  const handleApplyForRole = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRoleId) return;
+    app.applyForClubRole(club.id, activeRoleId, applyNote);
+    setApplyNote('');
+  };
+
+  const pendingApps = (club.applications ?? []).filter((a) => a.status === 'pending');
 
   return (
     <div className="modal-layer" onClick={app.closeRoleModal}>
@@ -324,7 +491,7 @@ export function RoleManagerModal() {
             className={tab === 'roster' ? 'is-active' : ''}
             onClick={() => setTab('roster')}
           >
-            👥 Assign & Connect Students ({club.roster.length})
+            👥 {canManageRoles ? `Assign & Connect Students (${club.roster.length})` : `Active Team & Apply (${club.roster.length})`}
           </button>
           <button
             type="button"
@@ -337,91 +504,164 @@ export function RoleManagerModal() {
 
         {tab === 'roster' ? (
           <div className="role-modal-grid">
-            <form className="card form-card" onSubmit={handleAssignStudent}>
-              <Mono>ASSIGN STUDENT TO CUSTOM CLUB ROLE</Mono>
-              <p className="hint">
-                Assigning a student grants them the role’s capabilities immediately when you switch to their persona in the topbar.
-              </p>
+            {canManageRoles ? (
+              <form className="card form-card" onSubmit={handleAssignStudent}>
+                <Mono>ASSIGN STUDENT TO CUSTOM CLUB ROLE</Mono>
+                <p className="hint">
+                  Assigning a student grants them the role’s capabilities immediately and adds them to the Account Switcher.
+                </p>
 
-              <div className="track-switch">
-                <button
-                  type="button"
-                  className={!customMode ? 'is-active' : ''}
-                  onClick={() => setCustomMode(false)}
-                >
-                  UDEA Student Directory
-                </button>
-                <button
-                  type="button"
-                  className={customMode ? 'is-active' : ''}
-                  onClick={() => setCustomMode(true)}
-                >
-                  + Custom Student
-                </button>
-              </div>
-
-              {!customMode ? (
-                <label className="field">
-                  <span className="field-label">Select UDEA Student</span>
-                  <select
-                    value={selectedStudentId}
-                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                <div className="track-switch">
+                  <button
+                    type="button"
+                    className={!customMode ? 'is-active' : ''}
+                    onClick={() => setCustomMode(false)}
                   >
-                    {STUDENT_DIRECTORY.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.telegram} · {s.programme})
+                    UDEA Student Directory ({app.directory.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={customMode ? 'is-active' : ''}
+                    onClick={() => setCustomMode(true)}
+                  >
+                    + Custom Student
+                  </button>
+                </div>
+
+                {!customMode ? (
+                  <label className="field">
+                    <span className="field-label">Select UDEA Student</span>
+                    <select
+                      value={selectedStudentId}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                    >
+                      {app.directory.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.telegram} · {s.programmeShort})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <label className="field">
+                      <span className="field-label">Student Full Name *</span>
+                      <input
+                        value={customName}
+                        onChange={(e) => setCustomName(e.target.value)}
+                        placeholder="e.g., Nodirbek Karimov"
+                      />
+                    </label>
+                    <div className="field-row">
+                      <label className="field">
+                        <span className="field-label">Telegram Handle</span>
+                        <input
+                          value={customTelegram}
+                          onChange={(e) => setCustomTelegram(e.target.value)}
+                          placeholder="@nodirbek_udea"
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="field-label">Programme</span>
+                        <input
+                          value={customProgramme}
+                          onChange={(e) => setCustomProgramme(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                  </>
+                )}
+
+                <label className="field">
+                  <span className="field-label">Select Custom Role to Delegate</span>
+                  <select
+                    value={activeRoleId}
+                    onChange={(e) => setSelectedRoleId(e.target.value)}
+                  >
+                    {club.customRoles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.title} ({r.permissions.length} permissions)
                       </option>
                     ))}
                   </select>
                 </label>
-              ) : (
-                <>
-                  <label className="field">
-                    <span className="field-label">Student Full Name *</span>
-                    <input
-                      value={customName}
-                      onChange={(e) => setCustomName(e.target.value)}
-                      placeholder="e.g., Soliyev Firdavs"
-                    />
-                  </label>
-                  <div className="field-row">
-                    <label className="field">
-                      <span className="field-label">Telegram Handle</span>
-                      <input
-                        value={customTelegram}
-                        onChange={(e) => setCustomTelegram(e.target.value)}
-                        placeholder="@firdavs_soliyev"
-                      />
-                    </label>
-                    <label className="field">
-                      <span className="field-label">Programme</span>
-                      <input
-                        value={customProgramme}
-                        onChange={(e) => setCustomProgramme(e.target.value)}
-                      />
-                    </label>
+
+                <button type="submit" className="btn btn-primary">
+                  <Icon name="check" size={14} /> Assign & Connect Student
+                </button>
+
+                {pendingApps.length > 0 && (
+                  <div style={{ marginTop: 14 }}>
+                    <Mono>PENDING STUDENT APPLICATIONS ({pendingApps.length})</Mono>
+                    <div className="stack-sm" style={{ marginTop: 8 }}>
+                      {pendingApps.map((a) => {
+                        const rObj = club.customRoles.find((r) => r.id === a.roleId);
+                        return (
+                          <div key={a.id} className="roster-row-card">
+                            <div className="roster-row-head">
+                              <strong>{a.userName}</strong>
+                              <span className="badge badge-sm badge-success">{rObj?.title}</span>
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-xs"
+                                onClick={() => app.approveRoleApplication(club.id, a.id)}
+                              >
+                                Approve & Assign
+                              </button>
+                            </div>
+                            <p className="hint">{a.note}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </>
-              )}
-
-              <label className="field">
-                <span className="field-label">Select Custom Role to Delegate</span>
-                <select
-                  value={activeRoleId}
-                  onChange={(e) => setSelectedRoleId(e.target.value)}
-                >
-                  {club.customRoles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.title} ({r.permissions.length} permissions)
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <button type="submit" className="btn btn-primary">
-                <Icon name="check" size={14} /> Assign & Connect Student
-              </button>
-            </form>
+                )}
+              </form>
+            ) : (
+              <form className="card form-card" onSubmit={handleApplyForRole}>
+                <Mono>🙋 APPLY FOR A DELEGATED COORDINATOR ROLE</Mono>
+                <p className="hint">
+                  You are viewing as <strong>{app.persona.name}</strong>. Apply below for a coordinator role or switch to{' '}
+                  <strong>{club.leadName || 'Malika Karimova'}</strong> / <strong>Timur Alimov (Admin)</strong> to assign roles directly.
+                </p>
+                <label className="field">
+                  <span className="field-label">Role You Want to Apply For</span>
+                  <select
+                    value={activeRoleId}
+                    onChange={(e) => setSelectedRoleId(e.target.value)}
+                  >
+                    {club.customRoles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.title} ({r.permissions.length} permissions)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field-label">Short Note to Club President</span>
+                  <textarea
+                    rows={3}
+                    value={applyNote}
+                    onChange={(e) => setApplyNote(e.target.value)}
+                    placeholder="Share how you want to help organize events, workshops or media…"
+                  />
+                </label>
+                <div className="feed-actions">
+                  <button type="submit" className="btn btn-primary btn-sm">
+                    <Icon name="telegram" size={14} /> Submit Role Application
+                  </button>
+                  {club.leadId && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => app.setPersona(club.leadId!)}
+                    >
+                      Switch to {club.leadName} (President)
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
 
             <div className="card form-card">
               <Mono>ACTIVE CLUB LEADERSHIP & DELEGATED ROSTER</Mono>
@@ -435,6 +675,18 @@ export function RoleManagerModal() {
                         <span className="mono subtle">Elected Club President · Full Club Authority</span>
                       </div>
                       <span className="badge badge-success">CLUB PRESIDENT</span>
+                      {club.leadId && club.leadId !== app.persona.id && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => {
+                            app.setPersona(club.leadId!);
+                            app.closeRoleModal();
+                          }}
+                        >
+                          ⚡ Switch
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -454,11 +706,24 @@ export function RoleManagerModal() {
                         <span className="badge badge-success">{roleObj?.title ?? 'Coordinator'}</span>
                         <button
                           type="button"
-                          className="btn btn-ghost btn-xs danger-text"
-                          onClick={() => app.removeClubMember(club.id, item.id)}
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => {
+                            app.setPersona(item.userId);
+                            app.closeRoleModal();
+                          }}
+                          title={`Switch active account to ${item.userName}`}
                         >
-                          Revoke
+                          ⚡ Switch
                         </button>
+                        {canManageRoles && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs danger-text"
+                            onClick={() => app.removeClubMember(club.id, item.id)}
+                          >
+                            Revoke
+                          </button>
+                        )}
                       </div>
                       {roleObj && (
                         <div className="equipment-chips">
@@ -478,76 +743,101 @@ export function RoleManagerModal() {
           </div>
         ) : (
           <div className="role-modal-grid">
-            <form className="card form-card" onSubmit={handleCreateRole}>
-              <Mono>CREATE CUSTOM CLUB ROLE</Mono>
-              <label className="field">
-                <span className="field-label">Role Title *</span>
-                <input
-                  value={roleTitle}
-                  onChange={(e) => setRoleTitle(e.target.value)}
-                  placeholder="e.g., FinTech Case Coordinator, Lead Mentor, Workshop Host"
-                  required
-                />
-              </label>
-
-              <div className="field">
-                <span className="field-label">Badge Color</span>
-                <div className="feed-actions">
-                  {ROLE_COLORS.map((col) => (
+            {canManageRoles ? (
+              <form className="card form-card" onSubmit={handleSaveRole}>
+                <div className="row-between">
+                  <Mono>{editingRoleId ? 'EDIT CUSTOM CLUB ROLE' : 'CREATE CUSTOM CLUB ROLE'}</Mono>
+                  {editingRoleId && (
                     <button
-                      key={col}
                       type="button"
-                      className={`pill ${badgeColor === col ? 'is-active' : ''}`}
-                      onClick={() => setBadgeColor(col)}
+                      className="link-btn"
+                      onClick={() => {
+                        setEditingRoleId(null);
+                        setRoleTitle('');
+                      }}
                     >
-                      <i className="dot" style={{ background: col }} /> {col}
+                      Cancel Edit
                     </button>
-                  ))}
+                  )}
                 </div>
-              </div>
+                <label className="field">
+                  <span className="field-label">Role Title *</span>
+                  <input
+                    value={roleTitle}
+                    onChange={(e) => setRoleTitle(e.target.value)}
+                    placeholder="e.g., FinTech Case Coordinator, Lead Mentor, Workshop Host"
+                    required
+                  />
+                </label>
 
-              <div className="field">
-                <span className="field-label">Granular Permissions ({permissions.length} selected)</span>
-                <div className="perm-grid">
-                  {PERMISSION_META.map((meta) => {
-                    const on = permissions.includes(meta.id);
-                    return (
+                <div className="field">
+                  <span className="field-label">Badge Color</span>
+                  <div className="feed-actions">
+                    {ROLE_COLORS.map((col) => (
                       <button
-                        key={meta.id}
+                        key={col}
                         type="button"
-                        className={`equip-toggle ${on ? 'is-on' : ''}`}
-                        onClick={() => togglePerm(meta.id)}
+                        className={`pill ${badgeColor === col ? 'is-active' : ''}`}
+                        onClick={() => setBadgeColor(col)}
                       >
-                        <span className="checkbox">{on && <Icon name="check" size={11} />}</span>
-                        <span>
-                          <strong>{meta.label}</strong> — {meta.description}
-                        </span>
+                        <i className="dot" style={{ background: col }} /> {col}
                       </button>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <div className="field">
-                <span className="field-label">Category Scope (leave empty for all categories)</span>
-                <div className="feed-actions">
-                  {ALL_CATEGORIES.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      className={`pill ${allowedCats.includes(cat) ? 'is-active' : ''}`}
-                      onClick={() => toggleCat(cat)}
-                    >
-                      {CATEGORY_SHORT[cat]}
-                    </button>
-                  ))}
+                <div className="field">
+                  <span className="field-label">Granular Permissions ({permissions.length} selected)</span>
+                  <div className="perm-grid">
+                    {PERMISSION_META.map((meta) => {
+                      const on = permissions.includes(meta.id);
+                      return (
+                        <button
+                          key={meta.id}
+                          type="button"
+                          className={`equip-toggle ${on ? 'is-on' : ''}`}
+                          onClick={() => togglePerm(meta.id)}
+                        >
+                          <span className="checkbox">{on && <Icon name="check" size={11} />}</span>
+                          <span>
+                            <strong>{meta.label}</strong> — {meta.description}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              <button type="submit" className="btn btn-primary">
-                <Icon name="plus" size={14} /> Create Custom Role
-              </button>
-            </form>
+                <div className="field">
+                  <span className="field-label">Category Scope (leave empty for all categories)</span>
+                  <div className="feed-actions">
+                    {ALL_CATEGORIES.map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        className={`pill ${allowedCats.includes(cat) ? 'is-active' : ''}`}
+                        onClick={() => toggleCat(cat)}
+                      >
+                        {CATEGORY_SHORT[cat]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button type="submit" className="btn btn-primary">
+                  <Icon name={editingRoleId ? 'check' : 'plus'} size={14} />{' '}
+                  {editingRoleId ? 'Save Role Changes' : 'Create Custom Role'}
+                </button>
+              </form>
+            ) : (
+              <div className="card form-card">
+                <Mono>ROLE ARCHITECT LOCKED (READ-ONLY)</Mono>
+                <p className="hint">
+                  Only the Club President ({club.leadName || 'Club Lead'}), Campus Admin, or a member with{' '}
+                  <code>manage_roles</code> permission can create or edit custom roles.
+                </p>
+              </div>
+            )}
 
             <div className="card form-card">
               <Mono>DEFINED ROLES IN {club.short.toUpperCase()} ({club.customRoles.length})</Mono>
@@ -562,13 +852,24 @@ export function RoleManagerModal() {
                           ? 'All Categories'
                           : role.allowedCategories.map((c) => CATEGORY_SHORT[c]).join(', ')}
                       </span>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs danger-text"
-                        onClick={() => app.deleteClubRole(club.id, role.id)}
-                      >
-                        Delete
-                      </button>
+                      {canManageRoles && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() => startEditRole(role)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs danger-text"
+                            onClick={() => app.deleteClubRole(club.id, role.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="equipment-chips">
                       {role.permissions.map((p) => (

@@ -10,6 +10,7 @@ export type Role = 'student' | 'club_lead' | 'admin';
 export type Theme = 'light' | 'dark';
 export type View = 'explore' | 'clubs' | 'passes' | 'organizer' | 'studio';
 export type ExploreFeedMode = 'events' | 'posts' | 'combined';
+export type EventSortMode = 'soonest' | 'popular' | 'seats' | 'saved' | 'my_schedule';
 
 export type PermissionFlag =
   | 'create_events'        // Can create & edit events under this club/scope
@@ -19,6 +20,75 @@ export type PermissionFlag =
   | 'scan_tickets'         // Can use QR Scanner & check in attendees at the door
   | 'send_broadcasts'      // Can send Telegram notifications to registered attendees
   | 'manage_roles';        // Can create custom roles & assign members inside the club
+
+export type AttachmentKind = 'slides' | 'dataset' | 'doc' | 'recording' | 'photos' | 'repo';
+
+export interface AttachmentItem {
+  id: string;
+  title: string;
+  url: string;
+  kind: AttachmentKind;
+}
+
+export interface AppNotification {
+  id: string;
+  userId: string; // 'all' or specific persona id
+  title: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+  tone?: 'success' | 'info' | 'warn';
+  linkEventId?: string;
+  linkClubId?: string;
+  linkPostId?: string;
+}
+
+export interface EventSquad {
+  id: string;
+  name: string;
+  projectIdea: string;
+  neededRoles: string[];
+  members: {
+    userId: string;
+    name: string;
+    telegram: string;
+    role: string;
+  }[];
+}
+
+export interface EventFeedback {
+  id: string;
+  userId: string;
+  userName: string;
+  programme: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
+export interface StudentDirectoryItem {
+  id: string;
+  name: string;
+  telegram: string;
+  programme: string;
+  programmeShort: string;
+  color: string;
+  studentId?: string;
+  year?: string;
+}
+
+export interface ClubRoleApplication {
+  id: string;
+  clubId: string;
+  userId: string;
+  userName: string;
+  userTelegram: string;
+  userProgramme: string;
+  roleId: string;
+  note: string;
+  createdAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+}
 
 export interface CustomClubRole {
   id: string;
@@ -78,10 +148,12 @@ export interface CampusPost {
   clubId?: string;
   linkedEventId?: string;
   coverStyle?: string;
+  imageUrl?: string;
   badgeText?: string;
   pinned?: boolean;
   createdAt: string;
   updatedAt?: string;
+  attachments?: AttachmentItem[];
   reactions: {
     fire: number;
     heart: number;
@@ -97,8 +169,10 @@ export interface CampusPost {
   };
   comments: {
     id: string;
+    authorId?: string;
     authorName: string;
     authorProgramme: string;
+    authorRoleTitle?: string;
     text: string;
     createdAt: string;
   }[];
@@ -149,6 +223,7 @@ export interface Club {
   leadName?: string;
   customRoles: CustomClubRole[];
   roster: ClubMemberAssignment[];
+  applications?: ClubRoleApplication[];
 }
 
 export interface Person {
@@ -199,6 +274,10 @@ export interface EventItem {
   outcomes: string[];
   prerequisites?: string;
   agenda: AgendaItem[];
+  attachments?: AttachmentItem[];
+  squads?: EventSquad[];
+  feedback?: EventFeedback[];
+  adminNote?: string;
   category: Category;
   eventType: EventType;
   approvalStatus: ApprovalStatus;
@@ -260,6 +339,8 @@ export interface Filters {
   zone: BoshlikZone;
   language: Lang | 'all';
   search: string;
+  sort?: EventSortMode;
+  clubId?: string | null;
 }
 
 export interface Broadcast {
@@ -273,8 +354,13 @@ export interface Broadcast {
 export interface PersistedState {
   version: number;
   theme: Theme;
+  uiLang?: Lang;
   personaId: string;
+  personas?: Persona[];
+  directory?: StudentDirectoryItem[];
   followedClubs: string[];
+  savedEventIds?: string[];
+  notifications?: AppNotification[];
   clubs: Club[];
   events: EventItem[];
   posts: CampusPost[];
@@ -289,6 +375,10 @@ export interface EventDraft {
   title: string;
   subtitle: string;
   description: string;
+  outcomes?: string[];
+  prerequisites?: string;
+  agenda?: AgendaItem[];
+  attachments?: AttachmentItem[];
   track: EventType;
   category: Category;
   language: Lang;

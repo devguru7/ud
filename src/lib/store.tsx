@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import type {
+  AppNotification,
   Broadcast,
   CampusPost,
   Category,
@@ -15,21 +16,26 @@ import type {
   CustomClubRole,
   EventDraft,
   EventItem,
+  EventSquad,
   EventTeamMember,
   ExploreFeedMode,
   Filters,
+  Lang,
   PersistedState,
   Person,
   Persona,
+  StudentDirectoryItem,
   Ticket,
 } from '../types';
 import {
   buildSeedClubs,
   buildSeedEvents,
+  buildSeedNotifications,
   buildSeedPosts,
   buildSeedTickets,
   PERSONAS,
   ROOMS,
+  STUDENT_DIRECTORY,
 } from './seed';
 import {
   isFull,
@@ -47,6 +53,20 @@ import {
   getUserPermissionsForClub,
   getUserRoleInClub,
 } from './logic';
+import {
+  auth,
+  db,
+  doc,
+  firebaseSignOut,
+  googleProvider,
+  handleFirestoreError,
+  onAuthStateChanged,
+  OperationType,
+  serverTimestamp,
+  setDoc,
+  signInWithPopup,
+  User,
+} from '../firebase';
 
 export const STORAGE_KEY = 'udea_pulse_state_v1';
 export const TG_BOT = 'https://t.me/udea_pulse_bot/app';
@@ -83,6 +103,8 @@ const defaultFilters: Filters = {
   zone: 'all',
   language: 'all',
   search: '',
+  sort: 'soonest',
+  clubId: null,
 };
 
 const ROOM_MIGRATION_MAP: Record<string, string> = {
@@ -97,12 +119,45 @@ const ROOM_MIGRATION_MAP: Record<string, string> = {
   rm_mukimi_cowork: 'rm_lrc',
 };
 
+function buildAllPersonasFromDirectory(
+  basePersonas: Persona[],
+  directory: StudentDirectoryItem[],
+): Persona[] {
+  const map = new Map<string, Persona>();
+  basePersonas.forEach((p) => map.set(p.id, p));
+  directory.forEach((d) => {
+    if (!map.has(d.id)) {
+      map.set(d.id, {
+        id: d.id,
+        name: d.name,
+        role: 'student',
+        programme: d.programme,
+        programmeShort: d.programmeShort,
+        year: d.year ?? 'Year 2',
+        telegram: d.telegram,
+        studentId: d.studentId ?? `UDEA-25-${Math.floor(1000 + Math.random() * 8999)}`,
+        xp: 240,
+        reliabilityScore: 98,
+        color: d.color || '#2563EB',
+        headlineRole: `${d.programmeShort} · Student`,
+      });
+    }
+  });
+  return Array.from(map.values());
+}
+
 function initialState(): PersistedState {
+  const directory = [...STUDENT_DIRECTORY];
   return {
-    version: 3,
+    version: 4,
     theme: 'light',
+    uiLang: 'EN',
     personaId: 'usr_1',
+    personas: buildAllPersonasFromDirectory(PERSONAS, directory),
+    directory,
     followedClubs: ['club_fintech', 'club_acca', 'club_debate'],
+    savedEventIds: ['evt_1'],
+    notifications: buildSeedNotifications(),
     clubs: buildSeedClubs(),
     events: buildSeedEvents(),
     posts: buildSeedPosts(),
@@ -129,6 +184,9 @@ function loadState(): PersistedState {
         roomId: ROOMS.some((r) => r.id === roomId) ? roomId : 'rm_a1',
         teamMembers: Array.isArray(e.teamMembers) ? e.teamMembers : [],
         coHostClubIds: Array.isArray(e.coHostClubIds) ? e.coHostClubIds : [],
+        attachments: Array.isArray(e.attachments) ? e.attachments : [],
+        squads: Array.isArray(e.squads) ? e.squads : [],
+        feedback: Array.isArray(e.feedback) ? e.feedback : [],
       };
     });
 
@@ -136,13 +194,32 @@ function loadState(): PersistedState {
       ...defaultFilters,
       ...(parsed.filters || {}),
       zone: parsed.filters?.zone ?? 'all',
+      sort: parsed.filters?.sort ?? 'soonest',
+      clubId: parsed.filters?.clubId ?? null,
     };
     if (!['all', 'Boshlik', 'Online'].includes(filters.campus)) filters.campus = 'all';
+
+    const directory =
+      Array.isArray(parsed.directory) && parsed.directory.length > 0
+        ? parsed.directory
+        : [...STUDENT_DIRECTORY];
+    const personas = buildAllPersonasFromDirectory(
+      Array.isArray(parsed.personas) && parsed.personas.length > 0 ? parsed.personas : PERSONAS,
+      directory,
+    );
 
     return {
       ...initialState(),
       ...parsed,
-      version: 3,
+      version: 4,
+      uiLang: parsed.uiLang ?? 'EN',
+      personas,
+      directory,
+      savedEventIds: Array.isArray(parsed.savedEventIds) ? parsed.savedEventIds : ['evt_1'],
+      notifications:
+        Array.isArray(parsed.notifications) && parsed.notifications.length > 0
+          ? parsed.notifications
+          : buildSeedNotifications(),
       clubs: Array.isArray(parsed.clubs) && parsed.clubs.length > 0 ? parsed.clubs : buildSeedClubs(),
       events: migratedEvents,
       posts: Array.isArray(parsed.posts) && parsed.posts.length > 0 ? parsed.posts : buildSeedPosts(),
@@ -180,7 +257,10 @@ interface AppContextValue {
   state: PersistedState;
   persona: Persona;
   personas: Persona[];
+  directory: StudentDirectoryItem[];
   theme: 'light' | 'dark';
+  uiLang: Lang;
+  setUiLang: (lang: Lang) => void;
   view: string;
   setView: (view: string) => void;
   exploreMode: ExploreFeedMode;
@@ -196,6 +276,14 @@ interface AppContextValue {
   setTheme: (theme: 'light' | 'dark') => void;
   toggleTheme: () => void;
   setPersona: (id: string) => void;
+  registerStudentAccount: (payload: {
+    name: string;
+    telegram: string;
+    programme: string;
+    programmeShort?: string;
+    year?: string;
+    switchNow?: boolean;
+  }) => Persona;
   setFilters: (patch: Partial<Filters>) => void;
   resetFilters: () => void;
   resetDemo: () => void;
@@ -217,17 +305,40 @@ interface AppContextValue {
   confirmAttendance: (ticketId: string) => void;
   releaseSpot: (ticketId: string) => void;
   setTeamOptIn: (ticketId: string, on: boolean, tag: string) => void;
+  toggleSaveEvent: (eventId: string) => void;
+  isEventSaved: (eventId: string) => boolean;
+  markAllNotificationsRead: () => void;
+  unreadNotificationsCount: number;
   addQuestion: (eventId: string, text: string) => void;
   upvote: (eventId: string, questionId: string) => void;
   answerQuestion: (eventId: string, questionId: string, answer: string) => void;
+  addEventSquad: (eventId: string, squad: Omit<EventSquad, 'id'>) => void;
+  joinEventSquad: (eventId: string, squadId: string, role: string) => void;
+  addEventFeedback: (eventId: string, rating: number, comment: string) => void;
   updateEventCapacity: (eventId: string, capacity: number) => void;
   approveEvent: (eventId: string) => void;
-  rejectEvent: (eventId: string, suggestedRoomId?: string) => void;
+  rejectEvent: (eventId: string, suggestedRoomId?: string, note?: string) => void;
   checkInPerson: (eventId: string, personId: string) => void;
   undoCheckIn: (eventId: string, personId: string) => void;
+  verifyTicketCode: (eventId: string, code: string) => Result;
+  promoteWaitlistEntry: (eventId: string, waitlistId: string) => void;
   approveScreeningTicket: (ticketId: string) => void;
+  declineScreeningTicket: (ticketId: string) => void;
   broadcast: (eventId: string, text: string) => void;
   followClub: (clubId: string) => void;
+  createClub: (payload: {
+    name: string;
+    short: string;
+    category: Category;
+    description: string;
+    partner?: string;
+    color: string;
+    leadId?: string;
+    leadName?: string;
+  }) => Club;
+  updateClub: (clubId: string, patch: Partial<Club>) => void;
+  applyForClubRole: (clubId: string, roleId: string, note: string) => void;
+  approveRoleApplication: (clubId: string, applicationId: string) => void;
   exportICS: (eventId: string) => void;
   downloadEventICS: (event: EventItem) => void;
   createEvent: (draft: EventDraft) => Result;
@@ -250,14 +361,20 @@ interface AppContextValue {
   togglePostReaction: (postId: string, kind: 'fire' | 'heart' | 'rocket') => void;
   votePostPoll: (postId: string, optionId: string) => void;
   addPostComment: (postId: string, text: string) => void;
+  deletePostComment: (postId: string, commentId: string) => void;
   certificateTicketId: string | null;
-  openCertificate: (ticketId: string) => void;
+  openCertificate: (ticketOrEventId: string) => void;
   closeCertificate: () => void;
   organizerEventId: string | null;
   openOrganizer: (eventId: string) => void;
   categoryCounts: Record<Category, number>;
   pendingApprovals: number;
   managedEventsCount: number;
+  firebaseUser: User | null;
+  cloudSyncStatus: 'idle' | 'syncing' | 'synced' | 'error';
+  signInWithGoogle: () => Promise<void>;
+  signOutFirebase: () => Promise<void>;
+  syncToCloud: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -275,12 +392,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [roleModalClubId, setRoleModalClubId] = useState<string | null>(null);
   const [certificateTicketId, setCertificateTicketId] = useState<string | null>(null);
   const [organizerEventId, setOrganizerEventId] = useState<string | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const timers = useRef<Record<string, number>>({});
 
-  const persona = useMemo(
-    () => PERSONAS.find((p) => p.id === state.personaId) ?? PERSONAS[0],
-    [state.personaId],
+  const personas = useMemo(
+    () => state.personas && state.personas.length > 0 ? state.personas : buildAllPersonasFromDirectory(PERSONAS, state.directory ?? STUDENT_DIRECTORY),
+    [state.personas, state.directory],
   );
+
+  const directory = useMemo(
+    () => state.directory && state.directory.length > 0 ? state.directory : STUDENT_DIRECTORY,
+    [state.directory],
+  );
+
+  const persona = useMemo(
+    () => personas.find((p) => p.id === state.personaId) ?? personas[0],
+    [personas, state.personaId],
+  );
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setFirebaseUser(u);
+      if (u) setCloudSyncStatus('synced');
+      else setCloudSyncStatus('idle');
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     try {
@@ -296,7 +434,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (meta) meta.setAttribute('content', state.theme === 'dark' ? '#090A0D' : '#F6F5F2');
   }, [state.theme]);
 
-  // Fix #4: Lock document.body.style.overflow = 'hidden' whenever a drawer or modal is open
   const anyOverlayOpen = Boolean(
     drawerEventId || certificateTicketId || activePostModal || roleModalClubId || modal,
   );
@@ -336,6 +473,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }, 5400);
   };
 
+  const pushNotification = (notif: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => {
+    const record: AppNotification = {
+      ...notif,
+      id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      createdAt: new Date().toISOString(),
+      read: false,
+    };
+    setState((prev) => ({
+      ...prev,
+      notifications: [record, ...(prev.notifications ?? [])].slice(0, 40),
+    }));
+  };
+
+  const markAllNotificationsRead = () => {
+    setState((prev) => ({
+      ...prev,
+      notifications: (prev.notifications ?? []).map((n) => ({ ...n, read: true })),
+    }));
+  };
+
+  const unreadNotificationsCount = useMemo(
+    () =>
+      (state.notifications ?? []).filter(
+        (n) => !n.read && (n.userId === 'all' || n.userId === persona.id),
+      ).length,
+    [state.notifications, persona.id],
+  );
+
   const askConfirm = (options: ConfirmOptions): Promise<boolean> =>
     new Promise((resolve) => {
       setModal({ ...options, resolve });
@@ -353,8 +518,140 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const toggleTheme = () =>
     setState((prev) => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }));
 
+  const setUiLang = (uiLang: Lang) => {
+    setState((prev) => ({ ...prev, uiLang }));
+  };
+
+  const ensureStudentInState = (
+    userId: string,
+    name: string,
+    telegram: string,
+    programme: string,
+    programmeShort?: string,
+    color = '#2563EB',
+  ) => {
+    const shortProg =
+      programmeShort ||
+      (programme.includes('Finance')
+        ? 'Finance'
+        : programme.includes('Data')
+          ? 'Data Analytics'
+          : programme.includes('Management')
+            ? 'Management'
+            : programme.includes('Agri')
+              ? 'AgriTech'
+              : 'Student');
+
+    setState((prev) => {
+      const dir = prev.directory ?? STUDENT_DIRECTORY;
+      const pers = prev.personas ?? PERSONAS;
+      const nextDir = dir.some((d) => d.id === userId)
+        ? dir
+        : [
+            ...dir,
+            {
+              id: userId,
+              name,
+              telegram: telegram.startsWith('@') ? telegram : `@${telegram}`,
+              programme,
+              programmeShort: shortProg,
+              color,
+            },
+          ];
+      const nextPers = pers.some((p) => p.id === userId)
+        ? pers
+        : [
+            ...pers,
+            {
+              id: userId,
+              name,
+              role: 'student' as const,
+              programme,
+              programmeShort: shortProg,
+              year: 'Year 2',
+              telegram: telegram.startsWith('@') ? telegram : `@${telegram}`,
+              studentId: `UDEA-25-${Math.floor(1000 + Math.random() * 8999)}`,
+              xp: 220,
+              reliabilityScore: 98,
+              color,
+              headlineRole: `${shortProg} · Student`,
+            },
+          ];
+      return { ...prev, directory: nextDir, personas: nextPers };
+    });
+  };
+
+  const registerStudentAccount = (payload: {
+    name: string;
+    telegram: string;
+    programme: string;
+    programmeShort?: string;
+    year?: string;
+    switchNow?: boolean;
+  }): Persona => {
+    const id = `stu_${Date.now().toString(36)}`;
+    const colors = ['#2563EB', '#10B981', '#8B5CF6', '#EC4899', '#F97316', '#0EA5E9'];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const shortProg =
+      payload.programmeShort ||
+      (payload.programme.includes('Finance')
+        ? 'Finance'
+        : payload.programme.includes('Data')
+          ? 'Data Analytics'
+          : payload.programme.includes('Management')
+            ? 'Management'
+            : payload.programme.includes('Agri')
+              ? 'AgriTech'
+              : 'Foundation');
+    const cleanTg = payload.telegram.trim().startsWith('@')
+      ? payload.telegram.trim()
+      : `@${payload.telegram.trim().replace(/[^a-zA-Z0-9_]/g, '') || 'student_udea'}`;
+
+    const newPersona: Persona = {
+      id,
+      name: payload.name.trim(),
+      role: 'student',
+      programme: payload.programme,
+      programmeShort: shortProg,
+      year: payload.year || 'Year 2',
+      telegram: cleanTg,
+      studentId: `UDEA-26-${Math.floor(1000 + Math.random() * 8999)}`,
+      xp: 200,
+      reliabilityScore: 100,
+      color,
+      headlineRole: `${shortProg} · ${payload.year || 'Year 2'}`,
+    };
+
+    const dirEntry: StudentDirectoryItem = {
+      id,
+      name: newPersona.name,
+      telegram: cleanTg,
+      programme: payload.programme,
+      programmeShort: shortProg,
+      color,
+      studentId: newPersona.studentId,
+      year: newPersona.year,
+    };
+
+    setState((prev) => ({
+      ...prev,
+      personas: [...(prev.personas ?? personas), newPersona],
+      directory: [...(prev.directory ?? directory), dirEntry],
+      personaId: payload.switchNow ? id : prev.personaId,
+    }));
+
+    pushToast({
+      tone: 'success',
+      telegram: true,
+      title: payload.switchNow ? `Connected & switched to ${newPersona.name}` : `${newPersona.name} added to Campus Directory`,
+      message: `${cleanTg} (${shortProg}) is now available in the Account Switcher and Role Architect.`,
+    });
+
+    return newPersona;
+  };
+
   const setPersona = (id: string) => {
-    const next = PERSONAS.find((p) => p.id === id);
+    const next = personas.find((p) => p.id === id);
     if (!next || next.id === state.personaId) return;
     setState((prev) => ({ ...prev, personaId: id }));
     const customBadge = getPrimaryRoleBadgeForUser(next, state.clubs);
@@ -371,6 +668,73 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       title: `Switched to ${next.name}`,
       message: permission,
     });
+  };
+
+  const signInWithGoogle = async () => {
+    try {
+      setCloudSyncStatus('syncing');
+      const cred = await signInWithPopup(auth, googleProvider);
+      setFirebaseUser(cred.user);
+      setCloudSyncStatus('synced');
+      pushToast({
+        tone: 'success',
+        title: `Signed in as ${cred.user.displayName || cred.user.email}`,
+        message: 'Connected to Firebase Auth & Firestore cloud workspace.',
+      });
+    } catch (error) {
+      setCloudSyncStatus('idle');
+      pushToast({
+        tone: 'warn',
+        title: 'Google Sign-In cancelled or blocked',
+        message: error instanceof Error ? error.message : 'Continuing with local campus session.',
+      });
+    }
+  };
+
+  const signOutFirebase = async () => {
+    await firebaseSignOut(auth);
+    setFirebaseUser(null);
+    setCloudSyncStatus('idle');
+    pushToast({
+      tone: 'info',
+      title: 'Signed out of cloud account',
+      message: 'Local campus demo state remains active.',
+    });
+  };
+
+  const syncToCloud = async () => {
+    if (!auth.currentUser) {
+      await signInWithGoogle();
+      return;
+    }
+    const uid = auth.currentUser.uid;
+    const path = `workspaces/${uid}`;
+    try {
+      setCloudSyncStatus('syncing');
+      await setDoc(doc(db, 'workspaces', uid), {
+        ownerUid: uid,
+        personaId: state.personaId,
+        theme: state.theme,
+        uiLang: state.uiLang ?? 'EN',
+        payloadJson: JSON.stringify({
+          followedClubs: state.followedClubs,
+          savedEventIds: state.savedEventIds ?? [],
+          ticketsCount: state.tickets.length,
+          eventsCount: state.events.length,
+        }).slice(0, 800000),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setCloudSyncStatus('synced');
+      pushToast({
+        tone: 'success',
+        title: 'Synced to Firestore',
+        message: 'Your UDEA Pulse passes, roles and preferences are backed up to Firebase.',
+      });
+    } catch (error) {
+      setCloudSyncStatus('error');
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
   };
 
   const setFilters = (patch: Partial<Filters>) =>
@@ -397,7 +761,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setToasts([]);
     pushToast({
       tone: 'success',
-      title: 'Demo state reset to v3.0',
+      title: 'Demo state reset to v3.5',
       message: 'Boshlik rooms, delegated club roles, campus posts, tickets and approvals restored.',
     });
   };
@@ -423,6 +787,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const openRoleModal = (clubId: string) => setRoleModalClubId(clubId);
   const closeRoleModal = () => setRoleModalClubId(null);
+
+  const toggleSaveEvent = (eventId: string) => {
+    const saved = (state.savedEventIds ?? []).includes(eventId);
+    setState((prev) => ({
+      ...prev,
+      savedEventIds: saved
+        ? (prev.savedEventIds ?? []).filter((id) => id !== eventId)
+        : [...(prev.savedEventIds ?? []), eventId],
+    }));
+    pushToast({
+      tone: saved ? 'info' : 'success',
+      title: saved ? 'Removed from Saved Events' : 'Saved to Bookmarks',
+      message: saved
+        ? 'Removed from your Saved Events filter.'
+        : 'Filter by “Saved” on Explore to find this event anytime.',
+    });
+  };
+
+  const isEventSaved = (eventId: string): boolean => (state.savedEventIds ?? []).includes(eventId);
 
   const myTicket = (eventId: string): Ticket | undefined =>
     state.tickets.find(
@@ -497,7 +880,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         tickets: [...prev.tickets, ticket],
         events: prev.events.map((e) =>
-          e.id === eventId ? { ...e, waitlistCount: e.waitlistCount + 1 } : e,
+          e.id === eventId
+            ? {
+                ...e,
+                waitlistCount: e.waitlistCount + 1,
+                waitlistRoster: [
+                  ...e.waitlistRoster,
+                  {
+                    id: `wl_${persona.id}`,
+                    name: persona.name,
+                    programme: persona.programme ?? 'UDEA Student',
+                    programmeShort: persona.programmeShort ?? 'Student',
+                    telegram: persona.telegram,
+                    studentId: persona.studentId,
+                  },
+                ],
+              }
+            : e,
         ),
       }));
       pushToast({
@@ -562,15 +961,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!event) return;
     const wasConfirmed = ticket.status === 'confirmed' || ticket.status === 'checked_in';
     const promoted =
-      wasConfirmed && event.registeredCount >= event.capacity && event.waitlistRoster.length > 0
+      wasConfirmed && (event.registeredCount >= event.capacity || event.waitlistRoster.length > 0)
         ? event.waitlistRoster[0]
         : undefined;
+    const waitlistedTicket = wasConfirmed
+      ? state.tickets.find((t) => t.eventId === ticket.eventId && t.status === 'waitlisted')
+      : undefined;
 
     setState((prev) => ({
       ...prev,
-      tickets: prev.tickets.map((t) =>
-        t.ticketId === ticketId ? { ...t, status: 'cancelled' } : t,
-      ),
+      tickets: prev.tickets.map((t) => {
+        if (t.ticketId === ticketId) return { ...t, status: 'cancelled' };
+        if (waitlistedTicket && t.ticketId === waitlistedTicket.ticketId) {
+          return {
+            ...t,
+            status: 'confirmed',
+            seatNumber: event.capacity,
+            waitlistPosition: undefined,
+            qrHash: randomHash('UDEA-PASS'),
+          };
+        }
+        return t;
+      }),
       events: prev.events.map((e) => {
         if (e.id !== ticket.eventId) return e;
         const next: EventItem = { ...e };
@@ -598,12 +1010,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         } else if (ticket.status === 'waitlisted') {
           next.waitlistCount = Math.max(0, e.waitlistCount - 1);
+          next.waitlistRoster = e.waitlistRoster.filter((w) => w.id !== `wl_${ticket.userId}`);
         }
         return next;
       }),
     }));
 
     if (promoted) {
+      pushNotification({
+        userId: 'all',
+        title: `🎉 Waitlist #1 Promoted: ${promoted.name}`,
+        message: `${promoted.name} was automatically promoted to a confirmed seat for “${event.title}”.`,
+        tone: 'success',
+        linkEventId: event.id,
+      });
       pushToast({
         tone: 'success',
         telegram: true,
@@ -619,6 +1039,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           : 'You left the waitlist. You can rejoin at any time.',
       });
     }
+  };
+
+  const promoteWaitlistEntry = (eventId: string, waitlistId: string) => {
+    const event = state.events.find((e) => e.id === eventId);
+    if (!event) return;
+    const entry = event.waitlistRoster.find((w) => w.id === waitlistId);
+    if (!entry) return;
+
+    setState((prev) => ({
+      ...prev,
+      events: prev.events.map((e) => {
+        if (e.id !== eventId) return e;
+        return {
+          ...e,
+          capacity: Math.max(e.capacity, e.registeredCount + 1),
+          registeredCount: e.registeredCount + 1,
+          waitlistCount: Math.max(0, e.waitlistCount - 1),
+          waitlistRoster: e.waitlistRoster.filter((w) => w.id !== waitlistId),
+          attendees: [
+            ...e.attendees,
+            {
+              id: entry.id,
+              name: entry.name,
+              programme: entry.programme,
+              programmeShort: entry.programmeShort,
+              telegram: entry.telegram,
+              color: '#10B981',
+            },
+          ],
+        };
+      }),
+    }));
+
+    pushToast({
+      tone: 'success',
+      telegram: true,
+      title: `${entry.name} promoted to confirmed seat`,
+      message: `Sent confirmed QR pass to ${entry.telegram} via @udea_pulse_bot.`,
+    });
   };
 
   const confirmAttendance = (ticketId: string) => {
@@ -669,6 +1128,83 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       message: on
         ? `Classmates can now see you are looking for a team${tag ? ` as “${tag}”` : ''}.`
         : 'You are hidden from the teammate matchmaker.',
+    });
+  };
+
+  const addEventSquad = (eventId: string, squad: Omit<EventSquad, 'id'>) => {
+    const newSquad: EventSquad = {
+      ...squad,
+      id: `sq_${Date.now()}`,
+    };
+    setState((prev) => ({
+      ...prev,
+      events: prev.events.map((e) =>
+        e.id === eventId ? { ...e, squads: [newSquad, ...(e.squads ?? [])] } : e,
+      ),
+    }));
+    pushToast({
+      tone: 'success',
+      title: `Squad “${squad.name}” created`,
+      message: 'Attendees can now join your squad directly from the People & Teams tab.',
+    });
+  };
+
+  const joinEventSquad = (eventId: string, squadId: string, role: string) => {
+    setState((prev) => ({
+      ...prev,
+      events: prev.events.map((e) => {
+        if (e.id !== eventId) return e;
+        return {
+          ...e,
+          squads: (e.squads ?? []).map((sq) => {
+            if (sq.id !== squadId) return sq;
+            if (sq.members.some((m) => m.userId === persona.id)) return sq;
+            return {
+              ...sq,
+              neededRoles: sq.neededRoles.filter((r) => r !== role),
+              members: [
+                ...sq.members,
+                {
+                  userId: persona.id,
+                  name: persona.name,
+                  telegram: persona.telegram,
+                  role: role || persona.programmeShort || 'Builder',
+                },
+              ],
+            };
+          }),
+        };
+      }),
+    }));
+    pushToast({
+      tone: 'success',
+      telegram: true,
+      title: 'Joined squad!',
+      message: `Your Telegram handle (${persona.telegram}) was shared with the squad lead.`,
+    });
+  };
+
+  const addEventFeedback = (eventId: string, rating: number, comment: string) => {
+    if (!comment.trim()) return;
+    const fb = {
+      id: `fb_${Date.now()}`,
+      userId: persona.id,
+      userName: persona.name,
+      programme: persona.programmeShort ?? 'Student',
+      rating,
+      comment: comment.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    setState((prev) => ({
+      ...prev,
+      events: prev.events.map((e) =>
+        e.id === eventId ? { ...e, feedback: [fb, ...(e.feedback ?? [])] } : e,
+      ),
+    }));
+    pushToast({
+      tone: 'success',
+      title: 'Feedback submitted (+15 XP)',
+      message: 'Thank you for rating this Boshlik Campus session.',
     });
   };
 
@@ -756,6 +1292,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         e.id === eventId ? { ...e, approvalStatus: 'approved' } : e,
       ),
     }));
+    if (event) {
+      pushNotification({
+        userId: event.createdBy ?? 'all',
+        title: `✅ Room Request Approved: ${event.title}`,
+        message: `Campus Operations approved your room request. Your event is now live on Explore.`,
+        tone: 'success',
+        linkEventId: event.id,
+      });
+    }
     pushToast({
       tone: 'success',
       telegram: true,
@@ -766,14 +1311,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const rejectEvent = (eventId: string, suggestedRoomId?: string) => {
+  const rejectEvent = (eventId: string, suggestedRoomId?: string, note?: string) => {
     const event = state.events.find((e) => e.id === eventId);
     setState((prev) => ({
       ...prev,
       events: prev.events.map((e) => {
         if (e.id !== eventId) return e;
-        if (suggestedRoomId) return { ...e, roomId: suggestedRoomId };
-        return { ...e, approvalStatus: 'rejected' };
+        if (suggestedRoomId) {
+          return {
+            ...e,
+            roomId: suggestedRoomId,
+            adminNote: note || `Suggested alternate Boshlik room: ${suggestedRoomId}`,
+          };
+        }
+        return { ...e, approvalStatus: 'rejected', adminNote: note };
       }),
     }));
     pushToast({
@@ -803,9 +1354,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const person = state.events.find((e) => e.id === eventId)?.attendees.find((a) => a.id === personId);
     pushToast({
       tone: 'success',
-      title: `${person?.name ?? 'Guest'} checked in`,
+      title: `${person?.name ?? 'Guest'} checked in (+50 XP)`,
       message: 'Cached pass validated offline and synced to the attendance log.',
     });
+  };
+
+  const verifyTicketCode = (eventId: string, code: string): Result => {
+    const clean = code.trim().toUpperCase();
+    if (!clean) return { ok: false, message: 'Enter a QR hash, student ID or @telegram handle.' };
+    const event = state.events.find((e) => e.id === eventId);
+    if (!event) return { ok: false, message: 'Event not found.' };
+
+    const matchedTicket = state.tickets.find(
+      (t) =>
+        t.eventId === eventId &&
+        t.status !== 'cancelled' &&
+        (t.qrHash.toUpperCase() === clean || t.ticketId.toUpperCase() === clean),
+    );
+    if (matchedTicket) {
+      const personId = `att_${matchedTicket.userId}`;
+      checkInPerson(eventId, personId);
+      const holder = personas.find((p) => p.id === matchedTicket.userId);
+      return {
+        ok: true,
+        message: `Verified QR Pass ${matchedTicket.qrHash} for ${holder?.name ?? 'Attendee'}!`,
+      };
+    }
+
+    const matchedAttendee = event.attendees.find(
+      (a) =>
+        a.name.toUpperCase().includes(clean) ||
+        a.telegram.toUpperCase().includes(clean) ||
+        a.id.toUpperCase() === clean,
+    );
+    if (matchedAttendee) {
+      checkInPerson(eventId, matchedAttendee.id);
+      return {
+        ok: true,
+        message: `Checked in ${matchedAttendee.name} (${matchedAttendee.telegram})!`,
+      };
+    }
+
+    return { ok: false, message: `No matching pass or attendee found for “${code.trim()}”.` };
   };
 
   const undoCheckIn = (eventId: string, personId: string) => {
@@ -838,12 +1428,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         t.ticketId === ticketId ? { ...t, screeningStatus: 'approved' } : t,
       ),
     }));
-    const p = PERSONAS.find((x) => x.id === tkt?.userId);
+    const p = personas.find((x) => x.id === tkt?.userId);
     pushToast({
       tone: 'success',
       telegram: true,
       title: 'Application approved',
       message: `${p?.name ?? 'The student'} received a confirmed QR pass on Telegram.`,
+    });
+  };
+
+  const declineScreeningTicket = (ticketId: string) => {
+    const tkt = state.tickets.find((t) => t.ticketId === ticketId);
+    if (!tkt) return;
+    setState((prev) => ({
+      ...prev,
+      tickets: prev.tickets.map((t) =>
+        t.ticketId === ticketId ? { ...t, screeningStatus: 'rejected', status: 'cancelled' } : t,
+      ),
+      events: prev.events.map((e) =>
+        e.id === tkt.eventId
+          ? {
+              ...e,
+              registeredCount: Math.max(0, e.registeredCount - 1),
+              attendees: e.attendees.filter((a) => a.id !== `att_${tkt.userId}`),
+            }
+          : e,
+      ),
+    }));
+    const p = personas.find((x) => x.id === tkt.userId);
+    pushToast({
+      tone: 'warn',
+      telegram: true,
+      title: 'Application declined',
+      message: `${p?.name ?? 'The applicant'} was notified and the held seat was released.`,
     });
   };
 
@@ -859,6 +1476,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       recipients: event.registeredCount,
     };
     setState((prev) => ({ ...prev, broadcasts: [record, ...prev.broadcasts] }));
+    pushNotification({
+      userId: 'all',
+      title: `📣 Broadcast · ${event.title}`,
+      message: record.text,
+      tone: 'info',
+      linkEventId: event.id,
+    });
     pushToast({
       tone: 'success',
       telegram: true,
@@ -884,13 +1508,137 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const createClub = (payload: {
+    name: string;
+    short: string;
+    category: Category;
+    description: string;
+    partner?: string;
+    color: string;
+    leadId?: string;
+    leadName?: string;
+  }): Club => {
+    const newClub: Club = {
+      id: `club_${Date.now().toString(36)}`,
+      name: payload.name.trim(),
+      short: payload.short.trim() || payload.name.trim().slice(0, 16),
+      category: payload.category,
+      description: payload.description.trim(),
+      members: 25,
+      verified: true,
+      partner: payload.partner?.trim() || undefined,
+      color: payload.color || '#10B981',
+      leadId: payload.leadId || persona.id,
+      leadName: payload.leadName || persona.name,
+      customRoles: [
+        {
+          id: `role_default_${Date.now()}`,
+          clubId: '',
+          title: 'Events & Room Coordinator',
+          badgeColor: payload.color || '#10B981',
+          permissions: ['create_events', 'publish_posts', 'book_rooms', 'scan_tickets'],
+        },
+      ],
+      roster: [],
+      applications: [],
+    };
+    newClub.customRoles[0].clubId = newClub.id;
+    setState((prev) => ({
+      ...prev,
+      clubs: [newClub, ...prev.clubs],
+      followedClubs: [...prev.followedClubs, newClub.id],
+    }));
+    pushToast({
+      tone: 'success',
+      telegram: true,
+      title: `Verified Club “${newClub.name}” launched`,
+      message: 'Role Architect and official event tracks are now active for this society.',
+    });
+    return newClub;
+  };
+
+  const updateClub = (clubId: string, patch: Partial<Club>) => {
+    setState((prev) => ({
+      ...prev,
+      clubs: prev.clubs.map((c) => (c.id === clubId ? { ...c, ...patch } : c)),
+    }));
+    pushToast({
+      tone: 'success',
+      title: 'Club profile updated',
+      message: 'Changes are live in the Student Union directory.',
+    });
+  };
+
+  const applyForClubRole = (clubId: string, roleId: string, note: string) => {
+    const club = state.clubs.find((c) => c.id === clubId);
+    const role = club?.customRoles.find((r) => r.id === roleId);
+    if (!club || !role) return;
+    const app = {
+      id: `app_${Date.now()}`,
+      clubId,
+      userId: persona.id,
+      userName: persona.name,
+      userTelegram: persona.telegram,
+      userProgramme: persona.programme ?? 'UDEA Student',
+      roleId,
+      note: note.trim() || `Interested in helping ${club.short} as ${role.title}.`,
+      createdAt: new Date().toISOString(),
+      status: 'pending' as const,
+    };
+    setState((prev) => ({
+      ...prev,
+      clubs: prev.clubs.map((c) =>
+        c.id === clubId ? { ...c, applications: [app, ...(c.applications ?? [])] } : c,
+      ),
+    }));
+    pushNotification({
+      userId: club.leadId ?? 'usr_2',
+      title: `🙋 Role Application: ${persona.name}`,
+      message: `${persona.name} applied for “${role.title}” in ${club.short}.`,
+      tone: 'info',
+      linkClubId: club.id,
+    });
+    pushToast({
+      tone: 'success',
+      telegram: true,
+      title: `Applied for ${role.title}`,
+      message: `${club.leadName ?? 'Club President'} received your application in Role Architect.`,
+    });
+  };
+
+  const approveRoleApplication = (clubId: string, applicationId: string) => {
+    const club = state.clubs.find((c) => c.id === clubId);
+    const app = club?.applications?.find((a) => a.id === applicationId);
+    if (!club || !app) return;
+    assignClubMember(clubId, {
+      userId: app.userId,
+      userName: app.userName,
+      userTelegram: app.userTelegram,
+      userProgramme: app.userProgramme,
+      roleId: app.roleId,
+    });
+    setState((prev) => ({
+      ...prev,
+      clubs: prev.clubs.map((c) =>
+        c.id === clubId
+          ? {
+              ...c,
+              applications: (c.applications ?? []).map((a) =>
+                a.id === applicationId ? { ...a, status: 'approved' as const } : a,
+              ),
+            }
+          : c,
+      ),
+    }));
+  };
+
   const downloadEventICS = (event: EventItem) => {
     const room = ROOMS.find((r) => r.id === event.roomId);
     downloadFile(`${event.id}.ics`, buildICS(event, room), 'text/calendar;charset=utf-8');
     pushToast({
       tone: 'success',
       title: '.ics calendar file downloaded',
-      message: 'Open it to add the event to Google Calendar, Apple Calendar or Outlook.',
+      message: 'Open it to add the event to Google Calendar, Apple Calendar or Outlook (Tashkent UTC+5).',
     });
   };
 
@@ -899,7 +1647,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (event) downloadEventICS(event);
   };
 
-  // Fix #7: Strict validation in createEvent & updateEvent
   const validateDraft = (draft: EventDraft, excludeEventId?: string): Result | null => {
     if (draft.title.trim().length < 4) {
       return { ok: false, message: 'Event title must be at least 4 characters long.' };
@@ -949,7 +1696,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const resolveCreatorMeta = (draft: EventDraft) => {
     const club = state.clubs.find((c) => c.id === draft.hostClubId);
     const clubRole = club ? getUserRoleInClub(persona, club) : null;
-    const clubPerms = club ? getUserPermissionsForClub(persona, club) : [];
+    const clubPerms = club ? getUserPermissionsForClub(persona, club, draft.category) : [];
     const canBookDirectly =
       persona.role === 'admin' ||
       persona.role === 'club_lead' ||
@@ -977,16 +1724,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const id = `evt_${Date.now()}`;
     const capacity = draft.track === 'peer_meetup' ? Math.min(30, draft.capacity) : draft.capacity;
 
+    (draft.teamMembers ?? []).forEach((tm) => {
+      ensureStudentInState(tm.userId, tm.name, tm.telegram, tm.programme, tm.programme);
+    });
+
     const event: EventItem = {
       id,
       title: draft.title.trim(),
       subtitle: draft.subtitle.trim(),
       description: draft.description.trim() || draft.subtitle.trim(),
-      outcomes: [],
-      agenda: [
-        { time: draft.startTime, title: 'Doors open & QR check-in', speaker: persona.name },
-        { time: draft.startTime, title: 'Main session begins', speaker: hostName },
-      ],
+      outcomes:
+        draft.outcomes && draft.outcomes.length > 0
+          ? draft.outcomes
+          : ['Practical hands-on session on Boshlik Campus', 'Peer networking & Q&A with organisers'],
+      prerequisites: draft.prerequisites?.trim() || undefined,
+      agenda:
+        draft.agenda && draft.agenda.length > 0
+          ? draft.agenda
+          : [
+              { time: draft.startTime, title: 'Doors open & QR check-in', speaker: persona.name },
+              { time: draft.startTime, title: 'Main session & interactive workshop', speaker: hostName },
+            ],
+      attachments: draft.attachments ?? [],
+      squads: [],
+      feedback: [],
       category: draft.category,
       eventType: draft.track,
       approvalStatus: needsRoomApproval ? 'pending_room_approval' : 'approved',
@@ -1052,6 +1813,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const { hostName } = resolveCreatorMeta(draft);
     const capacity = draft.track === 'peer_meetup' ? Math.min(30, draft.capacity) : draft.capacity;
 
+    (draft.teamMembers ?? []).forEach((tm) => {
+      ensureStudentInState(tm.userId, tm.name, tm.telegram, tm.programme, tm.programme);
+    });
+
     setState((prev) => ({
       ...prev,
       events: prev.events.map((e) => {
@@ -1061,6 +1826,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           title: draft.title.trim(),
           subtitle: draft.subtitle.trim(),
           description: draft.description.trim() || draft.subtitle.trim(),
+          outcomes: draft.outcomes && draft.outcomes.length > 0 ? draft.outcomes : e.outcomes,
+          prerequisites: draft.prerequisites !== undefined ? draft.prerequisites : e.prerequisites,
+          agenda: draft.agenda && draft.agenda.length > 0 ? draft.agenda : e.agenda,
+          attachments: draft.attachments !== undefined ? draft.attachments : e.attachments,
           category: draft.category,
           eventType: draft.track,
           language: draft.language,
@@ -1100,6 +1869,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addEventTeamMember = (eventId: string, member: EventTeamMember) => {
+    ensureStudentInState(member.userId, member.name, member.telegram, member.programme, member.programme);
     setState((prev) => ({
       ...prev,
       events: prev.events.map((e) => {
@@ -1108,11 +1878,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return { ...e, teamMembers: [...filtered, member] };
       }),
     }));
+    pushNotification({
+      userId: member.userId,
+      title: `🎖️ Connected to Event Team: ${member.customLabel}`,
+      message: `${persona.name} added you to the organizing team. Switch to ${member.name} to access Host controls.`,
+      tone: 'success',
+      linkEventId: eventId,
+    });
     pushToast({
       tone: 'success',
       telegram: true,
       title: `${member.name} connected to event team`,
-      message: `${member.customLabel} (${member.telegram}) now has organizer access for this event.`,
+      message: `${member.customLabel} (${member.telegram}) now has organizer access and is available in the Account Switcher.`,
     });
   };
 
@@ -1193,6 +1970,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   ) => {
     const club = state.clubs.find((c) => c.id === clubId);
     const role = club?.customRoles.find((r) => r.id === payload.roleId);
+    ensureStudentInState(
+      payload.userId,
+      payload.userName,
+      payload.userTelegram,
+      payload.userProgramme,
+      undefined,
+      role?.badgeColor || club?.color || '#2563EB',
+    );
     const assignment: ClubMemberAssignment = {
       ...payload,
       id: `asg_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
@@ -1210,11 +1995,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return { ...c, roster: [...filtered, assignment] };
       }),
     }));
+    pushNotification({
+      userId: payload.userId,
+      title: `🎖️ Assigned as ${role?.title ?? 'Coordinator'} in ${club?.short ?? 'Club'}`,
+      message: `${persona.name} delegated ${role?.permissions.length ?? 0} permissions to your account.`,
+      tone: 'success',
+      linkClubId: clubId,
+    });
     pushToast({
       tone: 'success',
       telegram: true,
       title: `${payload.userName} assigned as ${role?.title ?? 'Coordinator'}`,
-      message: `Notified ${payload.userTelegram} via @udea_pulse_bot with their newly unlocked permissions.`,
+      message: `Notified ${payload.userTelegram} via @udea_pulse_bot. You can now switch to ${payload.userName} in the topbar!`,
     });
   };
 
@@ -1348,10 +2140,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addPostComment = (postId: string, text: string) => {
     if (!text.trim()) return;
+    const badge = getPrimaryRoleBadgeForUser(persona, state.clubs);
     const comment = {
       id: `cm_${Date.now()}`,
+      authorId: persona.id,
       authorName: persona.name,
       authorProgramme: persona.programmeShort ?? 'Staff',
+      authorRoleTitle:
+        persona.role === 'admin'
+          ? 'Campus Admin'
+          : persona.role === 'club_lead'
+            ? 'Club President'
+            : badge?.title,
       text: text.trim(),
       createdAt: new Date().toISOString(),
     };
@@ -1368,7 +2168,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const openCertificate = (ticketId: string) => setCertificateTicketId(ticketId);
+  const deletePostComment = (postId: string, commentId: string) => {
+    setState((prev) => ({
+      ...prev,
+      posts: prev.posts.map((p) =>
+        p.id === postId ? { ...p, comments: p.comments.filter((c) => c.id !== commentId) } : p,
+      ),
+    }));
+    pushToast({
+      tone: 'info',
+      title: 'Comment deleted',
+    });
+  };
+
+  const openCertificate = (ticketOrEventId: string) => setCertificateTicketId(ticketOrEventId);
   const closeCertificate = () => setCertificateTicketId(null);
   const openOrganizer = (eventId: string) => {
     setOrganizerEventId(eventId);
@@ -1396,7 +2209,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (e) => e.approvalStatus === 'pending_room_approval' || e.approvalStatus === 'pending',
   ).length;
 
-  // Fix #6: Role-aware notification badge count for managed/assigned events
   const managedEventsCount = useMemo(
     () =>
       state.events.filter(
@@ -1408,8 +2220,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const value: AppContextValue = {
     state,
     persona,
-    personas: PERSONAS,
+    personas,
+    directory,
     theme: state.theme,
+    uiLang: state.uiLang ?? 'EN',
+    setUiLang,
     view,
     setView,
     exploreMode,
@@ -1425,6 +2240,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTheme,
     toggleTheme,
     setPersona,
+    registerStudentAccount,
     setFilters,
     resetFilters,
     resetDemo,
@@ -1446,17 +2262,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     confirmAttendance,
     releaseSpot,
     setTeamOptIn,
+    toggleSaveEvent,
+    isEventSaved,
+    markAllNotificationsRead,
+    unreadNotificationsCount,
     addQuestion,
     upvote,
     answerQuestion,
+    addEventSquad,
+    joinEventSquad,
+    addEventFeedback,
     updateEventCapacity,
     approveEvent,
     rejectEvent,
     checkInPerson,
     undoCheckIn,
+    verifyTicketCode,
+    promoteWaitlistEntry,
     approveScreeningTicket,
+    declineScreeningTicket,
     broadcast,
     followClub,
+    createClub,
+    updateClub,
+    applyForClubRole,
+    approveRoleApplication,
     exportICS,
     downloadEventICS,
     createEvent,
@@ -1474,6 +2304,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     togglePostReaction,
     votePostPoll,
     addPostComment,
+    deletePostComment,
     certificateTicketId,
     openCertificate,
     closeCertificate,
@@ -1482,6 +2313,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     categoryCounts,
     pendingApprovals,
     managedEventsCount,
+    firebaseUser,
+    cloudSyncStatus,
+    signInWithGoogle,
+    signOutFirebase,
+    syncToCloud,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

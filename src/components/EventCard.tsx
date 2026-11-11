@@ -4,12 +4,18 @@ import { useApp } from '../lib/store';
 import { Avatar, CapacityBar, CategoryBadge, Icon, Mono, Poster } from './UI';
 import { ROOMS } from '../lib/seed';
 import { CATEGORY_LABEL, capacityState, dayLabel, firstName } from '../lib/utils';
+import { canManage } from '../lib/logic';
 
 export default function EventCard({ event }: { event: EventItem }) {
   const app = useApp();
   const ticket = app.myTicket(event.id);
+  const saved = app.isEventSaved(event.id);
+  const manage = canManage(event, app.persona, app.state.clubs);
   const full = event.registeredCount >= event.capacity;
   const club = app.state.clubs.find((c) => c.id === event.hostClubId);
+  const coHostClubs = (event.coHostClubIds ?? [])
+    .map((id) => app.state.clubs.find((c) => c.id === id))
+    .filter(Boolean);
   const room = ROOMS.find((r) => r.id === event.roomId);
   const teamCount = event.attendees.filter((a) => a.lookingForTeam).length;
   const peers = event.attendees.filter((a) => !a.self);
@@ -32,7 +38,7 @@ export default function EventCard({ event }: { event: EventItem }) {
       actionLabel = 'Partner Registration Saved ↗';
       actionTone = 'ghost';
       icon = 'external';
-      onAction = () => window.open(event.externalUrl ?? 'https://udea.uz/', '_blank', 'noopener');
+      onAction = () => app.openEvent(event.id);
     } else {
       actionLabel = ticket.status === 'checked_in' ? '✓ Checked In • Show QR' : '✓ Ticket Ready (Show QR)';
       actionTone = 'violet';
@@ -52,6 +58,7 @@ export default function EventCard({ event }: { event: EventItem }) {
     actionLabel = 'Apply to Join';
     actionTone = 'primary';
     icon = 'flag';
+    onAction = () => app.openEvent(event.id);
   }
 
   const state = capacityState(event);
@@ -71,6 +78,18 @@ export default function EventCard({ event }: { event: EventItem }) {
     >
       <div className="event-cover">
         <Poster event={event} />
+        <button
+          type="button"
+          className={`bookmark-btn ${saved ? 'is-saved' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            app.toggleSaveEvent(event.id);
+          }}
+          aria-label={saved ? 'Remove from saved events' : 'Save event'}
+          title={saved ? 'Saved to bookmarks' : 'Save event'}
+        >
+          <Icon name="bookmark" size={14} />
+        </button>
         <span className="cover-room-pill mono">
           {event.campus === 'Online' ? 'ONLINE' : `BOSHLIK • ${room?.code ?? 'TBA'}`}
         </span>
@@ -80,6 +99,11 @@ export default function EventCard({ event }: { event: EventItem }) {
         <div className="event-host">
           <Avatar name={club?.name ?? event.hostName} color={club?.color ?? '#525860'} size={24} />
           <span className="host-name">{event.hostName}</span>
+          {coHostClubs.length > 0 && (
+            <span className="badge badge-sm badge-muted" title={`Co-hosted with ${coHostClubs.map((c) => c?.name).join(', ')}`}>
+              + {coHostClubs[0]?.short}
+            </span>
+          )}
           <span className="verified" title="Verified UDEA host">
             <Icon name="check" size={11} />
           </span>
@@ -129,6 +153,26 @@ export default function EventCard({ event }: { event: EventItem }) {
             <span className="meta-sep">•</span>
             <Mono>{event.startTime}–{event.endTime}</Mono>
             <CategoryBadge category={event.category} small />
+            {manage && (
+              <span className="card-quick-tools" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => app.openOrganizer(event.id)}
+                  title="Open QR Scanner & Organizer Console"
+                >
+                  <Icon name="qr" size={12} /> QR
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => app.openEditEvent(event.id)}
+                  title="Edit Event in Host Studio"
+                >
+                  <Icon name="edit" size={12} />
+                </button>
+              </span>
+            )}
           </div>
           <button
             className={`btn btn-${actionTone} card-action`}

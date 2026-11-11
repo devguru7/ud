@@ -1,4 +1,5 @@
 import type {
+  Category,
   Club,
   EventItem,
   PermissionFlag,
@@ -17,10 +18,6 @@ export const ALL_PERMISSIONS: PermissionFlag[] = [
   'manage_roles',
 ];
 
-/**
- * Fix #5: Check against BOTH 'approved' AND 'pending_room_approval' / 'pending'
- * (ignoring only 'rejected' or 'cancelled', and excluding excludeEventId when editing).
- */
 export function findRoomConflicts(
   events: EventItem[],
   roomId: string,
@@ -84,15 +81,20 @@ export function availableRooms(
     (r) =>
       r.campus === campus &&
       r.kind !== 'online' &&
-      r.capacity >= Math.min(minCapacity, 30) &&
+      r.capacity >= minCapacity &&
       findRoomConflicts(events, r.id, date, startTime, endTime, excludeEventId).length === 0,
   );
 }
 
 /**
- * Centralized Permission Resolution Engine for Clubs (Part 2.2)
+ * Centralized Permission Resolution Engine for Clubs
+ * Respects CustomClubRole.allowedCategories when category is provided.
  */
-export function getUserPermissionsForClub(user: Persona, club: Club): PermissionFlag[] {
+export function getUserPermissionsForClub(
+  user: Persona,
+  club: Club,
+  category?: Category | string,
+): PermissionFlag[] {
   if (!user || !club) return [];
   if (user.role === 'admin') return [...ALL_PERMISSIONS];
   if (club.leadId === user.id || (user.role === 'club_lead' && user.clubId === club.id)) {
@@ -103,7 +105,15 @@ export function getUserPermissionsForClub(user: Persona, club: Club): Permission
   for (const assignment of assignments) {
     const role = (club.customRoles ?? []).find((r) => r.id === assignment.roleId);
     if (role) {
-      role.permissions.forEach((p) => perms.add(p));
+      const categoryAllowed =
+        !category ||
+        !role.allowedCategories ||
+        role.allowedCategories.length === 0 ||
+        role.allowedCategories.includes(category as Category);
+      role.permissions.forEach((p) => {
+        if (p === 'create_events' && !categoryAllowed) return;
+        perms.add(p);
+      });
     }
   }
   return Array.from(perms);
@@ -112,7 +122,13 @@ export function getUserPermissionsForClub(user: Persona, club: Club): Permission
 export function getUserRoleInClub(
   user: Persona,
   club: Club,
-): { title: string; badgeColor: string; clubShort: string; permissions: PermissionFlag[] } | null {
+): {
+  title: string;
+  badgeColor: string;
+  clubShort: string;
+  permissions: PermissionFlag[];
+  allowedCategories?: Category[];
+} | null {
   if (user.role === 'admin') {
     return {
       title: 'Campus Admin',
@@ -138,44 +154,63 @@ export function getUserRoleInClub(
     badgeColor: role.badgeColor || club.color || '#2563EB',
     clubShort: club.short,
     permissions: role.permissions,
+    allowedCategories: role.allowedCategories,
   };
+}
+
+export interface UserRoleBadgeInfo {
+  title: string;
+  badgeColor: string;
+  clubId: string;
+  clubName: string;
+  clubShort: string;
+  permissions: PermissionFlag[];
+  allowedCategories?: Category[];
+}
+
+export function getAllRoleBadgesForUser(user: Persona, clubs: Club[]): UserRoleBadgeInfo[] {
+  if (!user) return [];
+  const badges: UserRoleBadgeInfo[] = [];
+  for (const club of clubs) {
+    if (club.leadId === user.id || (user.role === 'club_lead' && user.clubId === club.id)) {
+      badges.push({
+        title: 'Club President',
+        badgeColor: club.color || '#8B5CF6',
+        clubId: club.id,
+        clubName: club.name,
+        clubShort: club.short,
+        permissions: [...ALL_PERMISSIONS],
+      });
+    }
+    const assignments = (club.roster ?? []).filter((m) => m.userId === user.id);
+    for (const assignment of assignments) {
+      const role = (club.customRoles ?? []).find((r) => r.id === assignment.roleId);
+      if (role) {
+        badges.push({
+          title: role.title,
+          badgeColor: role.badgeColor || club.color || '#2563EB',
+          clubId: club.id,
+          clubName: club.name,
+          clubShort: club.short,
+          permissions: role.permissions,
+          allowedCategories: role.allowedCategories,
+        });
+      }
+    }
+  }
+  return badges;
 }
 
 export function getPrimaryRoleBadgeForUser(
   user: Persona,
   clubs: Club[],
 ): { title: string; badgeColor: string; clubId: string; clubShort: string; permissions: PermissionFlag[] } | null {
-  for (const club of clubs) {
-    if (club.leadId === user.id || (user.role === 'club_lead' && user.clubId === club.id)) {
-      return {
-        title: 'Club President',
-        badgeColor: club.color,
-        clubId: club.id,
-        clubShort: club.short,
-        permissions: [...ALL_PERMISSIONS],
-      };
-    }
-  }
-  for (const club of clubs) {
-    const assignment = (club.roster ?? []).find((m) => m.userId === user.id);
-    if (assignment) {
-      const role = (club.customRoles ?? []).find((r) => r.id === assignment.roleId);
-      if (role) {
-        return {
-          title: role.title,
-          badgeColor: role.badgeColor,
-          clubId: club.id,
-          clubShort: club.short,
-          permissions: role.permissions,
-        };
-      }
-    }
-  }
-  return null;
+  const all = getAllRoleBadgesForUser(user, clubs);
+  return all.length > 0 ? all[0] : null;
 }
 
 /**
- * Centralized Permission Resolution Engine for Events (Part 2.2)
+ * Centralized Permission Resolution Engine for Events
  */
 export function getUserPermissionsForEvent(
   user: Persona,
@@ -202,7 +237,7 @@ export function getUserPermissionsForEvent(
   for (const cid of clubIds) {
     const club = clubs.find((c) => c.id === cid);
     if (club) {
-      const clubPerms = getUserPermissionsForClub(user, club);
+      const clubPerms = getUserPermissionsForClub(user, club, event.category);
       clubPerms.forEach((p) => perms.add(p));
     }
   }
@@ -241,16 +276,15 @@ export function getUserCanCreateOfficialEvents(
   user: Persona,
   clubs: Club[],
   clubId?: string | null,
-  _category?: string,
+  category?: Category | string,
 ): boolean {
   if (user.role === 'admin' || user.role === 'club_lead') return true;
   if (clubId) {
     const target = clubs.find((c) => c.id === clubId);
-    if (target && getUserPermissionsForClub(user, target).includes('create_events')) {
-      return true;
-    }
+    if (!target) return false;
+    return getUserPermissionsForClub(user, target, category).includes('create_events');
   }
-  return clubs.some((c) => getUserPermissionsForClub(user, c).includes('create_events'));
+  return clubs.some((c) => getUserPermissionsForClub(user, c, category).includes('create_events'));
 }
 
 export function getUserRoleTitleForClub(

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../lib/store';
 import type {
+  AttachmentItem,
   Category,
   Campus,
   EventDraft,
@@ -8,9 +9,10 @@ import type {
   EventStaffRole,
   EventTeamMember,
   Lang,
+  PermissionFlag,
   RegistrationMode,
 } from '../types';
-import { ROOMS, STUDENT_DIRECTORY } from '../lib/seed';
+import { ROOMS } from '../lib/seed';
 import { Avatar, Icon, Mono, Poster, SectionHeader } from './UI';
 import {
   CATEGORY_LABEL,
@@ -20,8 +22,9 @@ import {
   minutesFromTime,
   pct,
   timeFromMinutes,
+  uid,
 } from '../lib/utils';
-import { STAFF_ROLE_DEFAULT_PERMS, STAFF_ROLE_LABEL } from '../lib/labels';
+import { PERMISSION_META, STAFF_ROLE_DEFAULT_PERMS, STAFF_ROLE_LABEL } from '../lib/labels';
 import {
   availableRooms,
   findRoomConflicts,
@@ -52,6 +55,10 @@ const emptyDraft = (defaultClubId: string | null = 'club_fintech'): EventDraft =
   title: '',
   subtitle: '',
   description: '',
+  outcomes: [],
+  prerequisites: '',
+  agenda: [],
+  attachments: [],
   track: 'official',
   category: 'fintech',
   language: 'EN',
@@ -88,10 +95,24 @@ export default function HostStudio() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  // Outcomes & Agenda & Attachments local builders
+  const [outcomeInput, setOutcomeInput] = useState('');
+  const [agendaTime, setAgendaTime] = useState('14:00');
+  const [agendaTitle, setAgendaTitle] = useState('');
+  const [agendaSpeaker, setAgendaSpeaker] = useState('');
+  const [attLabel, setAttLabel] = useState('');
+  const [attUrl, setAttUrl] = useState('');
+  const [attKind, setAttKind] = useState<AttachmentItem['kind']>('slides');
+
   // Team member builder state
-  const [selectedStudentId, setSelectedStudentId] = useState(STUDENT_DIRECTORY[0].id);
+  const [selectedStudentId, setSelectedStudentId] = useState(app.directory[0]?.id ?? 'usr_4');
   const [staffRole, setStaffRole] = useState<EventStaffRole>('coordinator');
   const [staffLabel, setStaffLabel] = useState('FinTech Case Coordinator');
+  const [staffPerms, setStaffPerms] = useState<PermissionFlag[]>(STAFF_ROLE_DEFAULT_PERMS.coordinator);
+  const [customPersonMode, setCustomPersonMode] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customTelegram, setCustomTelegram] = useState('');
+  const [customProgramme, setCustomProgramme] = useState('BSc Finance & FinTech (Coventry)');
 
   useEffect(() => {
     if (editingEvent) {
@@ -100,6 +121,10 @@ export default function HostStudio() {
         title: editingEvent.title,
         subtitle: editingEvent.subtitle,
         description: editingEvent.description,
+        outcomes: editingEvent.outcomes ?? [],
+        prerequisites: editingEvent.prerequisites ?? '',
+        agenda: editingEvent.agenda ?? [],
+        attachments: editingEvent.attachments ?? [],
         track: editingEvent.eventType,
         category: editingEvent.category,
         language: editingEvent.language,
@@ -178,14 +203,76 @@ export default function HostStudio() {
 
   const hostClub = app.state.clubs.find((c) => c.id === draft.hostClubId);
 
+  const fillDemoDraft = () => {
+    setDraft({
+      title: 'Treasury Liquidity & Algorithmic FX Risk Lab',
+      subtitle: 'Hands-on simulation of intraday FX hedging and interbank liquidity buffers in Lab 204.',
+      description:
+        'Work in pairs on a real commercial bank balance-sheet dataset. We will stress-test UZS/USD volatility scenarios, compute VaR limits, and present a 3-minute treasury desk recommendation.',
+      outcomes: [
+        'Build an intraday FX exposure ladder in Python & Excel',
+        'Understand Central Bank reserve and liquidity coverage ratios',
+        'Earn verified Coventry–UDEA co-curricular credit',
+      ],
+      prerequisites: 'Bring a laptop with Excel or Python installed. Open to all BSc & Foundation students.',
+      agenda: [
+        { time: '14:00', title: 'Case Briefing & Treasury Desk Setup', speaker: persona.name },
+        { time: '14:35', title: 'FX Volatility Stress-Test Sprint', speaker: 'FinTech Club Case Leads' },
+        { time: '15:25', title: 'Desk Pitches & Certificate Verification', speaker: 'Guest Treasury Mentor' },
+      ],
+      attachments: [
+        {
+          id: uid('att'),
+          title: 'FX_Liquidity_Case_Workbook.xlsx',
+          url: 'https://udea.uz/assets/fx-liquidity-workbook.xlsx',
+          kind: 'dataset',
+        },
+        {
+          id: uid('att'),
+          title: 'Treasury_Risk_Briefing_Deck.pdf',
+          url: 'https://udea.uz/assets/treasury-briefing-deck.pdf',
+          kind: 'slides',
+        },
+      ],
+      track: 'official',
+      category: 'fintech',
+      language: 'EN',
+      hostClubId: 'club_fintech',
+      coHostClubIds: ['club_data'],
+      coverStyle: 'emerald',
+      coverImage: '',
+      pattern: 'grid',
+      date: isoOffset(3),
+      startTime: '14:00',
+      endTime: '16:00',
+      campus: 'Boshlik',
+      roomId: 'rm_204',
+      equipment: ['4K Projector', 'Wireless Mics', 'Power Strips'],
+      registrationMode: 'internal_1click',
+      externalUrl: '',
+      screeningPrompt: '',
+      capacity: 40,
+      waitlistEnabled: true,
+      teamFinder: true,
+      certificate: true,
+      teamMembers: draft.teamMembers,
+    });
+    app.pushToast({
+      tone: 'info',
+      title: 'Demo event template loaded',
+      message: 'Review the pre-filled agenda, outcomes, attachments and conflict check.',
+    });
+  };
+
   const previewEvent: EventItem = {
     id: editingEvent?.id ?? 'preview',
     title: draft.title || 'Your event title appears here',
     subtitle: draft.subtitle || 'A one-line summary pulls students in — keep it concrete.',
     description: draft.description,
-    outcomes: editingEvent?.outcomes ?? [],
-    prerequisites: editingEvent?.prerequisites ?? '',
-    agenda: editingEvent?.agenda ?? [],
+    outcomes: draft.outcomes ?? [],
+    prerequisites: draft.prerequisites ?? '',
+    agenda: draft.agenda ?? [],
+    attachments: draft.attachments ?? [],
     category: draft.category,
     eventType: draft.track,
     approvalStatus: 'approved',
@@ -220,23 +307,54 @@ export default function HostStudio() {
     teamMembers: draft.teamMembers,
   };
 
+  const toggleStaffPerm = (flag: PermissionFlag) => {
+    setStaffPerms((prev) => (prev.includes(flag) ? prev.filter((p) => p !== flag) : [...prev, flag]));
+  };
+
   const addTeamMemberToDraft = () => {
-    const dir = STUDENT_DIRECTORY.find((s) => s.id === selectedStudentId);
-    if (!dir) return;
+    let userId = selectedStudentId;
+    let name = '';
+    let telegram = '';
+    let programme = '';
+
+    if (customPersonMode) {
+      if (customName.trim().length < 2) {
+        setError('Please enter a valid student name (min 2 characters).');
+        return;
+      }
+      userId = `stu_${uid('usr')}`;
+      name = customName.trim();
+      telegram = customTelegram.trim()
+        ? customTelegram.trim().startsWith('@')
+          ? customTelegram.trim()
+          : `@${customTelegram.trim()}`
+        : `@${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+      programme = customProgramme.trim() || 'BSc Digital Economics (Coventry)';
+    } else {
+      const dir = app.directory.find((s) => s.id === selectedStudentId);
+      if (!dir) return;
+      userId = dir.id;
+      name = dir.name;
+      telegram = dir.telegram;
+      programme = dir.programme;
+    }
+
     const member: EventTeamMember = {
-      userId: dir.id,
-      name: dir.name,
-      telegram: dir.telegram,
-      programme: dir.programme,
+      userId,
+      name,
+      telegram,
+      programme,
       role: staffRole,
       customLabel: staffLabel.trim() || STAFF_ROLE_LABEL[staffRole],
-      permissions: STAFF_ROLE_DEFAULT_PERMS[staffRole],
+      permissions: staffPerms.length > 0 ? staffPerms : STAFF_ROLE_DEFAULT_PERMS[staffRole],
       showOnEventPage: true,
     };
     set(
       'teamMembers',
       [...draft.teamMembers.filter((m) => m.userId !== member.userId), member],
     );
+    setCustomName('');
+    setCustomTelegram('');
   };
 
   const removeTeamMemberFromDraft = (userId: string) => {
@@ -301,11 +419,16 @@ export default function HostStudio() {
         title={editingEvent ? `Editing: ${editingEvent.title}` : 'Host Event Studio'}
         subtitle={
           editingEvent
-            ? 'Modify schedule, room, capacity, or connect additional co-hosts and volunteers.'
+            ? 'Modify schedule, room, agenda, attachments, capacity, or connect additional co-hosts and volunteers.'
             : 'Split-screen builder with a live poster preview, Telegram post preview, role-aware permissions and Boshlik room conflict check.'
         }
         action={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {!editingEvent && (
+              <button className="btn btn-violet btn-sm" onClick={fillDemoDraft}>
+                <Icon name="spark" size={14} /> Auto-Fill Demo Event
+              </button>
+            )}
             {editingEvent && (
               <button
                 className="btn btn-ghost btn-sm"
@@ -384,11 +507,14 @@ export default function HostStudio() {
                     value={draft.hostClubId ?? 'club_fintech'}
                     onChange={(e) => set('hostClubId', e.target.value)}
                   >
-                    {app.state.clubs.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.short})
-                      </option>
-                    ))}
+                    {app.state.clubs.map((c) => {
+                      const canDirect = getUserCanCreateOfficialEvents(persona, app.state.clubs, c.id, draft.category);
+                      return (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.short}) — {canDirect ? '✓ Authorized (Instant Publish)' : '⏳ Requires Approval'}
+                        </option>
+                      );
+                    })}
                   </select>
                 </label>
                 <label className="field">
@@ -460,6 +586,193 @@ export default function HostStudio() {
                   <option value="RU">Russian (RU)</option>
                 </select>
               </label>
+            </div>
+
+            <div className="recap-editor-box">
+              <span className="mono subtle">AGENDA, LEARNING OUTCOMES & MATERIALS (OPTIONAL)</span>
+
+              <label className="field">
+                <span className="field-label">Prerequisites / What to Bring</span>
+                <input
+                  value={draft.prerequisites ?? ''}
+                  onChange={(e) => set('prerequisites', e.target.value)}
+                  placeholder="e.g. Laptop with Python or Excel installed; open to all years"
+                />
+              </label>
+
+              <div className="field">
+                <span className="field-label">Key Learning Outcomes ({(draft.outcomes ?? []).length})</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    value={outcomeInput}
+                    onChange={(e) => setOutcomeInput(e.target.value)}
+                    placeholder="Add a concrete takeaway or skill…"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      if (!outcomeInput.trim()) return;
+                      set('outcomes', [...(draft.outcomes ?? []), outcomeInput.trim()]);
+                      setOutcomeInput('');
+                    }}
+                  >
+                    + Add
+                  </button>
+                </div>
+                {(draft.outcomes ?? []).length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                    {(draft.outcomes ?? []).map((o, idx) => (
+                      <span key={idx} className="badge badge-teal">
+                        ✓ {o}
+                        <button
+                          type="button"
+                          style={{ marginLeft: 5 }}
+                          onClick={() =>
+                            set(
+                              'outcomes',
+                              (draft.outcomes ?? []).filter((_, i) => i !== idx),
+                            )
+                          }
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="field">
+                <span className="field-label">Run of Show / Agenda ({(draft.agenda ?? []).length} blocks)</span>
+                <div className="field-row three">
+                  <input type="time" value={agendaTime} onChange={(e) => setAgendaTime(e.target.value)} />
+                  <input
+                    value={agendaTitle}
+                    onChange={(e) => setAgendaTitle(e.target.value)}
+                    placeholder="Block title (e.g. Case Intro)"
+                  />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      value={agendaSpeaker}
+                      onChange={(e) => setAgendaSpeaker(e.target.value)}
+                      placeholder="Speaker (optional)"
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        if (!agendaTitle.trim()) return;
+                        set('agenda', [
+                          ...(draft.agenda ?? []),
+                          {
+                            time: agendaTime || draft.startTime,
+                            title: agendaTitle.trim(),
+                            speaker: agendaSpeaker.trim() || undefined,
+                          },
+                        ]);
+                        setAgendaTitle('');
+                        setAgendaSpeaker('');
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                {(draft.agenda ?? []).length > 0 && (
+                  <div className="stack-sm" style={{ marginTop: 6 }}>
+                    {(draft.agenda ?? []).map((item, idx) => (
+                      <div key={idx} className="roster-chip" style={{ justifyContent: 'space-between' }}>
+                        <span>
+                          <strong className="mono">{item.time}</strong> · {item.title}{' '}
+                          {item.speaker ? `(${item.speaker})` : ''}
+                        </span>
+                        <button
+                          type="button"
+                          className="danger-text mono"
+                          onClick={() =>
+                            set(
+                              'agenda',
+                              (draft.agenda ?? []).filter((_, i) => i !== idx),
+                            )
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="field">
+                <span className="field-label">Slides, Datasets & Attachments ({(draft.attachments ?? []).length})</span>
+                <div className="field-row three">
+                  <input
+                    value={attLabel}
+                    onChange={(e) => setAttLabel(e.target.value)}
+                    placeholder="File title (e.g. Case_Deck.pdf)"
+                  />
+                  <input
+                    value={attUrl}
+                    onChange={(e) => setAttUrl(e.target.value)}
+                    placeholder="URL (https://...)"
+                  />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select
+                      value={attKind}
+                      onChange={(e) => setAttKind(e.target.value as AttachmentItem['kind'])}
+                    >
+                      <option value="slides">Slides</option>
+                      <option value="dataset">Dataset</option>
+                      <option value="doc">Doc</option>
+                      <option value="photos">Photos</option>
+                      <option value="repo">Repo</option>
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        if (!attLabel.trim()) return;
+                        set('attachments', [
+                          ...(draft.attachments ?? []),
+                          {
+                            id: uid('att'),
+                            title: attLabel.trim(),
+                            url: attUrl.trim() || 'https://udea.uz/',
+                            kind: attKind,
+                          },
+                        ]);
+                        setAttLabel('');
+                        setAttUrl('');
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                {(draft.attachments ?? []).length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                    {(draft.attachments ?? []).map((att) => (
+                      <span key={att.id} className="badge badge-muted">
+                        📎 {att.title} ({att.kind.toUpperCase()})
+                        <button
+                          type="button"
+                          style={{ marginLeft: 5 }}
+                          onClick={() =>
+                            set(
+                              'attachments',
+                              (draft.attachments ?? []).filter((x) => x.id !== att.id),
+                            )
+                          }
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 
@@ -718,29 +1031,69 @@ export default function HostStudio() {
           </section>
 
           <section className="form-card">
-            <div className="form-step">
-              <span className="step-num mono">05</span>
-              <h3>Connect Event Team & Volunteers</h3>
+            <div className="form-step" style={{ justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <span className="step-num mono">05</span>
+                <h3>Connect Event Team & Volunteers</h3>
+              </div>
+              <button
+                type="button"
+                className={`btn btn-xs ${customPersonMode ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setCustomPersonMode((v) => !v)}
+              >
+                <Icon name="userPlus" size={12} /> {customPersonMode ? 'Pick from Directory' : '+ New Person'}
+              </button>
             </div>
             <p className="hint" style={{ margin: '0 0 12px' }}>
               Connect fellow students as Co-Hosts, Case Coordinators, QR Gate Scanners or Guest Speakers so they can
-              help manage check-ins or appear on the event page.
+              help manage check-ins or appear on the event page and earn official coordinator certificates.
             </p>
 
+            {customPersonMode ? (
+              <div className="field-row three" style={{ marginBottom: 10 }}>
+                <label className="field">
+                  <span className="field-label">Full Name</span>
+                  <input
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder="e.g. Sardor Rahimov"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Telegram Handle</span>
+                  <input
+                    value={customTelegram}
+                    onChange={(e) => setCustomTelegram(e.target.value)}
+                    placeholder="@sardor_udea"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Programme</span>
+                  <input
+                    value={customProgramme}
+                    onChange={(e) => setCustomProgramme(e.target.value)}
+                    placeholder="BSc Finance & FinTech"
+                  />
+                </label>
+              </div>
+            ) : null}
+
             <div className="field-row three">
-              <label className="field">
-                <span className="field-label">Student</span>
-                <select
-                  value={selectedStudentId}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                >
-                  {STUDENT_DIRECTORY.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.telegram})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {!customPersonMode && (
+                <label className="field">
+                  <span className="field-label">Student</span>
+                  <select
+                    value={selectedStudentId}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                  >
+                    {app.directory.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.telegram})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="field">
                 <span className="field-label">Event Role</span>
                 <select
@@ -749,6 +1102,7 @@ export default function HostStudio() {
                     const nextRole = e.target.value as EventStaffRole;
                     setStaffRole(nextRole);
                     setStaffLabel(STAFF_ROLE_LABEL[nextRole]);
+                    setStaffPerms(STAFF_ROLE_DEFAULT_PERMS[nextRole]);
                   }}
                 >
                   {(Object.keys(STAFF_ROLE_LABEL) as EventStaffRole[]).map((r) => (
@@ -768,7 +1122,29 @@ export default function HostStudio() {
               </label>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+            <div style={{ marginTop: 8 }}>
+              <span className="field-label" style={{ display: 'block', marginBottom: 6 }}>
+                Delegated Event Permissions
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {PERMISSION_META.map((meta) => {
+                  const on = staffPerms.includes(meta.id);
+                  return (
+                    <button
+                      type="button"
+                      key={meta.id}
+                      className={`pill ${on ? 'is-active' : ''}`}
+                      style={{ padding: '4px 10px', fontSize: 11 }}
+                      onClick={() => toggleStaffPerm(meta.id)}
+                    >
+                      ✓ {meta.short}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
               <button type="button" className="btn btn-ghost btn-sm" onClick={addTeamMemberToDraft}>
                 <Icon name="plus" size={13} /> Connect Student to Event
               </button>
@@ -778,20 +1154,22 @@ export default function HostStudio() {
               <div className="roster-stack" style={{ marginTop: 12 }}>
                 {draft.teamMembers.map((tm) => (
                   <div key={tm.userId} className="roster-row-card">
-                    <Avatar name={tm.name} color="#0D9488" size={32} />
-                    <div className="roster-row-main">
-                      <strong>{tm.name}</strong>
-                      <span className="mono">
-                        {tm.customLabel} · {tm.telegram}
-                      </span>
+                    <div className="roster-row-head">
+                      <Avatar name={tm.name} color="#0D9488" size={32} />
+                      <div className="roster-row-main">
+                        <strong>{tm.name}</strong>
+                        <span className="mono">
+                          {tm.customLabel} · {tm.telegram} · {tm.permissions.length} perms
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs danger-text"
+                        onClick={() => removeTeamMemberFromDraft(tm.userId)}
+                      >
+                        Remove
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-xs danger-text"
-                      onClick={() => removeTeamMemberFromDraft(tm.userId)}
-                    >
-                      Remove
-                    </button>
                   </div>
                 ))}
               </div>

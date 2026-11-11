@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import type { CampusPost, PostType } from '../types';
+import type { AttachmentItem, CampusPost, PostType } from '../types';
 import { ROOMS } from '../lib/seed';
-import { useApp } from '../lib/store';
-import { dayLabel, eventSeatsLeft, isFull, relativeTime } from '../lib/utils';
-import { getPrimaryRoleBadgeForUser, getUserCanPublishPosts } from '../lib/logic';
+import { useApp, TG_BOT } from '../lib/store';
+import { copyText, dayLabel, eventSeatsLeft, isFull, relativeTime } from '../lib/utils';
+import { getPrimaryRoleBadgeForUser, getUserPermissionsForClub } from '../lib/logic';
 import { Avatar, CategoryBadge, Icon, Mono } from './UI';
 
 const POST_TYPE_META: Record<PostType, { label: string; icon: string; badgeClass: string }> = {
@@ -33,12 +33,27 @@ export function PostCard({ post, compact = false }: { post: CampusPost; compact?
   const ticket = linkedEvent ? app.myTicket(linkedEvent.id) : undefined;
   const typeMeta = POST_TYPE_META[post.type] ?? POST_TYPE_META.announcement;
 
+  const clubPerms = club ? getUserPermissionsForClub(app.persona, club) : [];
   const canModify =
     app.persona.role === 'admin' ||
     post.authorId === app.persona.id ||
-    Boolean(club && club.leadId === app.persona.id);
+    Boolean(club && club.leadId === app.persona.id) ||
+    clubPerms.includes('publish_posts');
 
   const totalVotes = (post.pollOptions ?? []).reduce((acc, o) => acc + o.votes, 0);
+
+  const copyTelegramFormatted = async () => {
+    const text = `📢 ${post.title}\n\n${post.body}${
+      linkedEvent ? `\n\n🎟 Event: ${linkedEvent.title} (${dayLabel(linkedEvent.date)} • ${linkedEvent.startTime})` : ''
+    }\n🔗 Open in UDEA Pulse: ${TG_BOT}?startapp=post_${post.id}`;
+    const ok = await copyText(text);
+    app.pushToast({
+      tone: ok ? 'success' : 'info',
+      telegram: true,
+      title: 'Copied formatted Telegram post',
+      message: 'Ready to paste into @udeauz_events or any faculty group chat.',
+    });
+  };
 
   return (
     <article className={`card post-card ${post.pinned ? 'is-pinned' : ''} ${compact ? 'is-compact' : ''}`}>
@@ -56,39 +71,49 @@ export function PostCard({ post, compact = false }: { post: CampusPost; compact?
             {post.telegramSynced && <span className="glass-pill mono-pill">TG SYNCED</span>}
           </div>
 
-          {canModify && (
-            <div className="post-owner-actions">
-              <button
-                type="button"
-                className="glass-pill mono-pill post-action-pill"
-                onClick={() => app.togglePinPost(post.id)}
-              >
-                {post.pinned ? 'Unpin' : 'Pin'}
-              </button>
-              <button
-                type="button"
-                className="glass-pill mono-pill post-action-pill"
-                onClick={() => app.openPostModal({ postId: post.id })}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className="glass-pill mono-pill post-action-pill"
-                onClick={async () => {
-                  const ok = await app.askConfirm({
-                    title: 'Delete campus post?',
-                    message: `“${post.title}” will be removed from the Boshlik campus feed.`,
-                    confirmLabel: 'Delete Post',
-                    tone: 'danger',
-                  });
-                  if (ok) app.deletePost(post.id);
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          )}
+          <div className="post-owner-actions">
+            <button
+              type="button"
+              className="glass-pill mono-pill post-action-pill"
+              onClick={copyTelegramFormatted}
+              title="Copy formatted Telegram message"
+            >
+              📲 Copy TG
+            </button>
+            {canModify && (
+              <>
+                <button
+                  type="button"
+                  className="glass-pill mono-pill post-action-pill"
+                  onClick={() => app.togglePinPost(post.id)}
+                >
+                  {post.pinned ? 'Unpin' : 'Pin'}
+                </button>
+                <button
+                  type="button"
+                  className="glass-pill mono-pill post-action-pill"
+                  onClick={() => app.openPostModal({ postId: post.id })}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="glass-pill mono-pill post-action-pill"
+                  onClick={async () => {
+                    const ok = await app.askConfirm({
+                      title: 'Delete campus post?',
+                      message: `“${post.title}” will be removed from the Boshlik campus feed.`,
+                      confirmLabel: 'Delete Post',
+                      tone: 'danger',
+                    });
+                    if (ok) app.deletePost(post.id);
+                  }}
+                >
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <h3 className="post-banner-title">{post.title}</h3>
       </div>
@@ -112,6 +137,23 @@ export function PostCard({ post, compact = false }: { post: CampusPost; compact?
         </div>
 
         <p className="post-text">{post.body}</p>
+
+        {post.attachments && post.attachments.length > 0 && (
+          <div className="equipment-chips" style={{ marginBottom: 10 }}>
+            {post.attachments.map((att) => (
+              <a
+                key={att.id}
+                href={att.url}
+                target="_blank"
+                rel="noreferrer"
+                className="equip-chip"
+                style={{ textDecoration: 'none' }}
+              >
+                <Icon name="paperclip" size={11} /> {att.title}
+              </a>
+            ))}
+          </div>
+        )}
 
         {post.recapStats && (
           <div className="post-recap-box">
@@ -269,7 +311,19 @@ export function PostCard({ post, compact = false }: { post: CampusPost; compact?
                     <div className="post-comment-bubble">
                       <div className="post-comment-head">
                         <strong>{c.authorName}</strong>
+                        {c.authorRoleTitle && (
+                          <span className="badge badge-sm badge-success">{c.authorRoleTitle}</span>
+                        )}
                         <span className="mono subtle">{c.authorProgramme} • {relativeTime(c.createdAt)}</span>
+                        {(canModify || c.authorId === app.persona.id) && (
+                          <button
+                            type="button"
+                            className="link-btn danger-text"
+                            onClick={() => app.deletePostComment(post.id, c.id)}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                       <p>{c.text}</p>
                     </div>
@@ -321,6 +375,9 @@ export function PostModal() {
   const [badgeText, setBadgeText] = useState('');
   const [pinned, setPinned] = useState(false);
   const [telegramSynced, setTelegramSynced] = useState(true);
+  const [attTitle, setAttTitle] = useState('');
+  const [attUrl, setAttUrl] = useState('');
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [pollOpts, setPollOpts] = useState<string[]>([
     'Payme & Click Merchant API Deep-Dive',
     'IFRS & ACCA F3 Audit Case Study',
@@ -345,6 +402,7 @@ export function PostModal() {
       setBadgeText(existing.badgeText ?? '');
       setPinned(Boolean(existing.pinned));
       setTelegramSynced(existing.telegramSynced !== false);
+      setAttachments(existing.attachments ?? []);
       if (existing.pollOptions && existing.pollOptions.length > 0) {
         setPollOpts(existing.pollOptions.map((o) => o.text));
       }
@@ -377,6 +435,7 @@ export function PostModal() {
       );
       setPinned(false);
       setTelegramSynced(true);
+      setAttachments([]);
 
       if (defEvent) {
         const ev = app.state.events.find((e) => e.id === defEvent);
@@ -441,6 +500,21 @@ export function PostModal() {
     }
   };
 
+  const handleAddAttachment = () => {
+    if (!attTitle.trim() || !attUrl.trim()) return;
+    setAttachments((prev) => [
+      ...prev,
+      {
+        id: `att_post_${Date.now()}`,
+        title: attTitle.trim(),
+        url: attUrl.trim(),
+        kind: 'doc',
+      },
+    ]);
+    setAttTitle('');
+    setAttUrl('');
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (title.trim().length < 4 || body.trim().length < 8) {
@@ -491,6 +565,7 @@ export function PostModal() {
       coverStyle,
       badgeText: badgeText.trim() || undefined,
       pinned,
+      attachments,
       pollOptions,
       recapStats,
       telegramSynced,
@@ -596,6 +671,41 @@ export function PostModal() {
                 required
               />
             </label>
+
+            <div className="field">
+              <span className="field-label">Attach Slides, Dataset or Photo Album Link (Optional)</span>
+              <div className="qa-answer-form">
+                <input
+                  value={attTitle}
+                  onChange={(e) => setAttTitle(e.target.value)}
+                  placeholder="Resource title (e.g., Keynote Slides PDF)"
+                />
+                <input
+                  value={attUrl}
+                  onChange={(e) => setAttUrl(e.target.value)}
+                  placeholder="https://udea.uz/..."
+                />
+                <button type="button" className="btn btn-ghost btn-xs" onClick={handleAddAttachment}>
+                  + Attach
+                </button>
+              </div>
+              {attachments.length > 0 && (
+                <div className="equipment-chips" style={{ marginTop: 6 }}>
+                  {attachments.map((a) => (
+                    <span key={a.id} className="equip-chip">
+                      <Icon name="paperclip" size={11} /> {a.title}
+                      <button
+                        type="button"
+                        className="link-btn danger-text"
+                        onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {type === 'discussion' && (
               <div className="field">

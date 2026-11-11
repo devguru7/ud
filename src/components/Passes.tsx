@@ -3,10 +3,14 @@ import { useApp } from '../lib/store';
 import type { EventItem, Ticket } from '../types';
 import { Avatar, Icon, Mono, SectionHeader, TicketQR, EmptyState } from './UI';
 import { ROOMS } from '../lib/seed';
-import { getCertificateRoleTitle } from '../lib/logic';
+import {
+  getAllRoleBadgesForUser,
+  getCertificateRoleTitle,
+  getUserRoleTitleForClub,
+} from '../lib/logic';
 import { dayLabel, longDate, minutesFromTime, isoDate } from '../lib/utils';
 
-const BADGES: Record<string, string[]> = {
+const BASE_BADGES: Record<string, string[]> = {
   usr_4: ['FinTech Case Coordinator', 'Practice Session Lead', 'QR Door Verifier'],
   usr_1: ['FinTech Explorer', 'Hackathon Finalist', 'Debate Speaker'],
   usr_2: ['Data Analytics Lead', 'Hackathon Mentor', 'Community Builder'],
@@ -26,21 +30,42 @@ export default function Passes() {
 
   const upcoming = rows.filter(({ event }) => event.date >= today && !event.past);
   const past = rows.filter(({ event }) => event.date < today || event.past);
+
+  // Events where user is organizer, delegated club coordinator, or connected team member/speaker
+  const organizedEvents = app.state.events.filter((e) => {
+    if (e.approvalStatus !== 'approved') return false;
+    if (e.createdBy === persona.id) return true;
+    if (e.teamMembers?.some((m) => m.userId === persona.id)) return true;
+    const clubRole = getUserRoleTitleForClub(persona, e.hostClubId ?? null, app.state.clubs);
+    return Boolean(clubRole);
+  });
+
   const attended = past.filter(({ ticket }) => ticket.status === 'checked_in').length;
-  const xp = persona.xp + upcoming.length * 15;
+  const xp = persona.xp + upcoming.length * 15 + organizedEvents.length * 35;
   const goldTarget = 1000;
   const progress = Math.min(100, Math.round((xp / goldTarget) * 100));
-  const badges = BADGES[persona.id] ?? ['Campus Explorer'];
+
+  const dynamicClubBadges = getAllRoleBadgesForUser(persona, app.state.clubs).map(
+    (b) => `${b.title} (${b.clubName})`,
+  );
+  const eventStaffBadges = app.state.events
+    .flatMap((e) => e.teamMembers ?? [])
+    .filter((m) => m.userId === persona.id)
+    .map((m) => m.customLabel);
+
+  const badges = Array.from(
+    new Set([...dynamicClubBadges, ...eventStaffBadges, ...(BASE_BADGES[persona.id] ?? ['Campus Explorer'])]),
+  );
 
   return (
     <div className="passes-view">
       <SectionHeader
         icon="ticket"
         title="My QR Passes & Student Passport"
-        subtitle="Holographic passes, waitlist positions and your co-curricular record — all stored locally."
+        subtitle="Holographic passes, waitlist positions, delegated organizing roles and your verified Coventry–UDEA co-curricular record."
         action={
           <span className="mono subtle">
-            {upcoming.length} ACTIVE PASS{upcoming.length === 1 ? '' : 'ES'}
+            {upcoming.length} ACTIVE PASS{upcoming.length === 1 ? '' : 'ES'} · {organizedEvents.length} ORGANIZED
           </span>
         }
       />
@@ -76,7 +101,7 @@ export default function Passes() {
             <div className="pstat">
               <span className="mono">CAMPUS XP</span>
               <strong>{xp}</strong>
-              <em>+15 per RSVP</em>
+              <em>+15 RSVP · +35 Host</em>
             </div>
             <div className="pstat">
               <span className="mono">EVENTS ATTENDED</span>
@@ -84,9 +109,9 @@ export default function Passes() {
               <em>verified check-ins</em>
             </div>
             <div className="pstat">
-              <span className="mono">ACTIVE PASSES</span>
-              <strong>{upcoming.length}</strong>
-              <em>incl. waitlists</em>
+              <span className="mono">ORGANIZED / STAFF</span>
+              <strong>{organizedEvents.length}</strong>
+              <em>leadership record</em>
             </div>
           </div>
 
@@ -108,17 +133,17 @@ export default function Passes() {
             <div className="capacity-track">
               <div className="capacity-fill gold-fill" style={{ width: `${Math.max(progress, 4)}%` }} />
             </div>
-            <p>{progress}% complete · attend {Math.max(0, 8 - attended)} more verified events this semester to qualify.</p>
+            <p>{progress}% complete · attend or coordinate {Math.max(0, 8 - attended - organizedEvents.length)} more verified events this semester to qualify.</p>
           </div>
         </div>
 
         <div className="passport-side">
           <div className="mini-info-card">
-            <span className="mono subtle">HOW PASSES WORK</span>
+            <span className="mono subtle">HOW PASSES & CREDITS WORK</span>
             <ul>
               <li><Icon name="qr" size={14} /> QR passes are cached offline — scanning works in basement halls.</li>
               <li><Icon name="bell" size={14} /> The bot checks 4h before start; confirm to lock your seat.</li>
-              <li><Icon name="clock" size={14} /> Releasing a seat promotes waitlist #1 automatically.</li>
+              <li><Icon name="award" size={14} /> Delegated coordinators & speakers earn official leadership certificates.</li>
             </ul>
           </div>
           <button className="btn btn-primary btn-lg block" onClick={() => app.setView('explore')}>
@@ -126,6 +151,47 @@ export default function Passes() {
           </button>
         </div>
       </div>
+
+      {organizedEvents.length > 0 && (
+        <div className="pass-section">
+          <div className="pass-section-head">
+            <h2>🎖️ My Organizing, Speaking & Coordinator Record</h2>
+            <Mono>{organizedEvents.length} LEADERSHIP CREDITS</Mono>
+          </div>
+          <div className="history-list">
+            {organizedEvents.map((event) => {
+              const roleTitle = getCertificateRoleTitle(persona, event, app.state.clubs);
+              const room = ROOMS.find((r) => r.id === event.roomId);
+              return (
+                <div key={event.id} className="history-row">
+                  <span className={`history-stripe cat-${event.category}`} />
+                  <div className="history-main">
+                    <strong>{event.title}</strong>
+                    <span className="mono">
+                      {dayLabel(event.date)} • {room?.code ?? 'BOSHLIK'} • ROLE: {roleTitle.toUpperCase()}
+                    </span>
+                  </div>
+                  <span className="badge badge-teal">✨ {roleTitle}</span>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => app.openOrganizer(event.id)}
+                    >
+                      <Icon name="shield" size={13} /> Console
+                    </button>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => app.openCertificate(event.id)}
+                    >
+                      <Icon name="print" size={14} /> Print Role Certificate
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="pass-section">
         <div className="pass-section-head">

@@ -1,5 +1,6 @@
 import type {
   AgendaItem,
+  AppNotification,
   CampusPost,
   Category,
   Club,
@@ -9,6 +10,7 @@ import type {
   Person,
   Question,
   Room,
+  StudentDirectoryItem,
   WaitlistEntry,
 } from '../types';
 import { isoOffset, randomHash, isoDate } from './utils';
@@ -69,16 +71,23 @@ export const PERSONAS: Persona[] = [
     color: '#F97316',
     headlineRole: 'Regular Student · Year 1',
   },
+  {
+    id: 'stu_diyora',
+    name: 'Diyora Rustamova',
+    role: 'student',
+    programme: 'BA (Hons) Business Management and Leadership',
+    programmeShort: 'Management',
+    year: 'Year 2',
+    telegram: '@diyora_media',
+    studentId: 'UDEA-24-0819',
+    xp: 510,
+    reliabilityScore: 99,
+    color: '#EC4899',
+    headlineRole: 'Head of Media & Posts · FinTech Society',
+  },
 ];
 
-export const STUDENT_DIRECTORY: {
-  id: string;
-  name: string;
-  telegram: string;
-  programme: string;
-  programmeShort: string;
-  color: string;
-}[] = [
+export const STUDENT_DIRECTORY: StudentDirectoryItem[] = [
   {
     id: 'usr_1',
     name: 'Soliyev Firdavs',
@@ -762,6 +771,47 @@ export function buildSeedEvents(): EventItem[] {
       pattern: 'grid',
       equipmentRequested: ['4K Laser Projector', 'Stage Sound', '4x Wireless Mics'],
       teamFinder: true,
+      attachments: [
+        {
+          id: 'att_hack_1',
+          title: 'Agrobank Sandbox API Documentation (PDF)',
+          url: 'https://udea.uz/assets/agrobank-sandbox-api-2026.pdf',
+          kind: 'doc',
+        },
+        {
+          id: 'att_hack_2',
+          title: '50k Synthetic Agri-Lending Dataset (CSV)',
+          url: 'https://udea.uz/assets/agrobank-lending-50k.csv',
+          kind: 'dataset',
+        },
+        {
+          id: 'att_hack_3',
+          title: 'Coventry Judging Rubric & Pitch Deck Template',
+          url: 'https://udea.uz/assets/hackathon-pitch-template.pptx',
+          kind: 'slides',
+        },
+      ],
+      squads: [
+        {
+          id: 'sq_1',
+          name: 'Team FinAI Tashkent',
+          projectIdea: 'AI-driven micro-loan credit scoring using satellite crop indices + Agrobank transaction history.',
+          neededRoles: ['UI/UX Designer', 'Frontend React'],
+          members: [
+            { userId: 'usr_1', name: 'Soliyev Firdavs', telegram: '@firdavs_udea', role: 'Quant & Pitch Lead' },
+            { userId: 'usr_4', name: 'Jasur Rakhimov', telegram: '@jasur_udea', role: 'Data Analytics & SQL' },
+          ],
+        },
+        {
+          id: 'sq_2',
+          name: 'AgriPay Express',
+          projectIdea: 'Instant QR factoring & escrow settlements for farmer cooperatives on Telegram Mini Apps.',
+          neededRoles: ['Python / Data Analysis'],
+          members: [
+            { userId: 'stu_amirbek', name: 'Amirbek Ne’matilloyev', telegram: '@amirbek_quant', role: 'Backend / APIs' },
+          ],
+        },
+      ],
       attendees: hackRoster,
       waitlistRoster: [],
       questions: questions([
@@ -1299,6 +1349,40 @@ export function buildSeedEvents(): EventItem[] {
       coverStyle: 'emerald',
       pattern: 'grid',
       equipmentRequested: ['4K Laser Projector', 'Stage Sound'],
+      attachments: [
+        {
+          id: 'att_past_1',
+          title: 'Keynote Slides: FinTech Careers in Uzbekistan',
+          url: 'https://udea.uz/assets/agrobank-forum-slides.pdf',
+          kind: 'slides',
+        },
+        {
+          id: 'att_past_2',
+          title: 'Auditorium A1 Photo Album (18 High-Res Photos)',
+          url: 'https://t.me/udeauz_events/412',
+          kind: 'photos',
+        },
+      ],
+      feedback: [
+        {
+          id: 'fb_1',
+          userId: 'usr_1',
+          userName: 'Soliyev Firdavs',
+          programme: 'Finance',
+          rating: 5,
+          comment: 'Super clear breakdown of the Agrobank grant timeline and Coventry co-curricular credits!',
+          createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+        },
+        {
+          id: 'fb_2',
+          userId: 'usr_4',
+          userName: 'Jasur Rakhimov',
+          programme: 'Data Analytics',
+          rating: 5,
+          comment: 'Loved the Q&A with the engineering lead.',
+          createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+        },
+      ],
       attendees: pastRoster,
       checkIns: pastCheckIns,
       past: true,
@@ -1596,5 +1680,42 @@ export const CATEGORY_COVERS: { id: string; label: string; css: string }[] = [
   },
 ];
 
+export function buildSeedNotifications(): AppNotification[] {
+  const now = Date.now();
+  return [
+    {
+      id: 'notif_1',
+      userId: 'usr_1',
+      title: '🎖️ Delegated Role Active: FinTech Case Coordinator',
+      message: 'Malika Karimova assigned you as FinTech Case Coordinator in FinTech Society. Host Studio & QR Scanner are unlocked.',
+      createdAt: new Date(now - 2 * 3600 * 1000).toISOString(),
+      read: false,
+      tone: 'success',
+      linkClubId: 'club_fintech',
+    },
+    {
+      id: 'notif_2',
+      userId: 'all',
+      title: '⚡ Last Spot Left: Agrobank x UDEA FinTech Hackathon',
+      message: '59 of 60 seats claimed in Auditorium A1. Sandbox API docs & 50k dataset are now attached to the event.',
+      createdAt: new Date(now - 45 * 60 * 1000).toISOString(),
+      read: false,
+      tone: 'warn',
+      linkEventId: 'evt_1',
+    },
+    {
+      id: 'notif_3',
+      userId: 'usr_3',
+      title: '🏫 Pending Boshlik Room Request: Auditorium A1',
+      message: 'Soliyev Firdavs requested Auditorium A1 + Stage Sound for UDEA AgriTech Robotics Expo 2026.',
+      createdAt: new Date(now - 30 * 60 * 1000).toISOString(),
+      read: false,
+      tone: 'info',
+      linkEventId: 'evt_pending',
+    },
+  ];
+}
+
 export const CATEGORY_IDS: Category[] = ['fintech', 'tech', 'academic', 'sports', 'culture'];
 export const SEED_DATE_STAMP = isoDate();
+

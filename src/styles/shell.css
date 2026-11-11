@@ -1167,15 +1167,40 @@
     display: inline;
   }
   .nav-tab {
-    padding: 8px 11px;
+    padding: 7px 10px;
+    font-size: 12px;
   }
-  .live-pill {
+  .live-pill,
+  .zone-quick-select {
     display: none;
+  }
+  .topbar-inner {
+    padding: 9px 18px;
+    gap: 10px;
+  }
+  .topbar-utils {
+    gap: 6px;
+  }
+  .mini-toggle {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+  .persona-btn-text {
+    max-width: 120px;
   }
 }
 
-@media (max-width: 1240px) {
-  .quick-select {
+@media (max-width: 1280px) {
+  .brand-text em {
+    display: none;
+  }
+  .mini-toggle span {
+    display: none;
+  }
+  .mini-toggle {
+    padding: 8px;
+  }
+  .post-create-btn span {
     display: none;
   }
 }
@@ -1193,7 +1218,7 @@
   }
 }
 
-@media (max-width: 880px) {
+@media (max-width: 960px) {
   .hero-side {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1205,27 +1230,81 @@
     min-width: 100%;
   }
   .topbar-inner {
-    padding: 10px 16px;
-    gap: 10px;
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
   }
   .brand-text {
     display: none;
   }
-  .host-btn {
-    padding: 9px 12px;
-    font-size: 12px;
+  .topbar-tabs {
+    flex: 1 1 auto;
+    justify-content: space-between;
   }
-  .mini-toggle span {
+  .topbar-tabs .nav-tab {
+    flex: 1;
+    justify-content: center;
+    padding: 7px 8px;
+  }
+  .topbar-utils {
+    width: 100%;
+    justify-content: space-between;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-hairline);
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .topbar-utils .mini-toggle,
+  .topbar-utils .quick-select {
     display: none;
   }
-  .mini-toggle {
-    padding: 9px;
+  .persona-wrap {
+    flex: 1 1 130px;
+    min-width: 120px;
+  }
+  .persona-btn {
+    width: 100%;
+  }
+  .persona-btn-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .host-btn {
+    padding: 8px 10px;
+    font-size: 11.5px;
+    flex-shrink: 0;
   }
 }
 
 @media (max-width: 620px) {
   .page {
-    padding: 16px 16px 32px;
+    padding: 14px 12px 32px;
+  }
+  .topbar-inner {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+  .topbar-tabs {
+    flex: 1 1 calc(100% - 44px);
+    min-width: 0;
+    justify-content: space-between;
+    padding: 3px;
+    gap: 2px;
+  }
+  .nav-tab {
+    padding: 6px 6px;
+    font-size: 11px;
+    gap: 4px;
+    flex: 1;
+    justify-content: center;
+  }
+  .nav-badge {
+    display: none;
   }
   .spotlight {
     min-height: 0;
@@ -1236,7 +1315,10 @@
   }
   .spotlight-countdown {
     width: 100%;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 11px 14px;
   }
   .countdown-date {
     display: none;
@@ -1267,13 +1349,16 @@
 
 /* ---------- Fix #2: Topbar tabs & Persona button truncation ---------- */
 .topbar-inner {
-  gap: 12px;
+  gap: 8px;
 }
 .topbar-tabs {
   flex-shrink: 0;
 }
+.topbar-utils {
+  gap: 6px;
+}
 .persona-btn-text {
-  max-width: 145px;
+  max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1283,6 +1368,29 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+@media (max-width: 1500px) and (min-width: 961px) {
+  .brand-text em {
+    display: none;
+  }
+  .nav-tab {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+  .mini-toggle {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+  .quick-select select {
+    max-width: 88px;
+  }
+  .persona-btn-text {
+    max-width: 108px;
+  }
+  .host-btn {
+    padding: 8px 11px;
+    font-size: 11.5px;
+  }
 }
 
 /* ---------- Part 1: Boshlik Zone Ribbon ---------- */
@@ -1639,4 +1747,266 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- Part 4: Notifications, Account Switcher, Bookmark & Rooms Timeline ---------- */
+.notif-btn {
+  position: relative;
+}
+.notif-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--signal-red);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 0 2px var(--bg-surface);
+}
+.notif-popover {
+  width: 340px;
+}
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.notif-item {
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: background 0.15s;
+}
+.notif-item:hover {
+  background: var(--bg-subtle);
+}
+.notif-item.is-unread {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.22);
+}
+.notif-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.notif-item-top strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+.notif-item p {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.new-account-form {
+  padding: 10px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.new-account-form input,
+.new-account-form select {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.persona-scroll-list {
+  max-height: 270px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.persona-cloud-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.bookmark-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: rgba(12, 14, 18, 0.44);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  transition: all 0.16s;
+}
+.bookmark-btn:hover {
+  background: rgba(12, 14, 18, 0.68);
+  color: #fff;
+}
+.bookmark-btn.is-saved {
+  background: var(--signal-green);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+}
+.card-quick-tools {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  gap: 5px;
+}
+.card-quick-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: rgba(12, 14, 18, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+}
+.card-quick-tools button:hover {
+  background: rgba(16, 185, 129, 0.85);
+}
+
+/* ---------- Boshlik Rooms Timeline ---------- */
+.rooms-timeline-card {
+  padding: 18px 20px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.rooms-timeline-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.rooms-timeline-head h3 {
+  font-size: 16px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.rooms-timeline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.timeline-ruler {
+  display: grid;
+  grid-template-columns: 190px repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.timeline-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.timeline-room-row {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.timeline-room-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.timeline-room-info strong {
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.timeline-bar-track {
+  position: relative;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-hairline);
+  overflow: hidden;
+}
+.timeline-empty-slot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.timeline-event-block {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 7px;
+  background: var(--cat-soft, rgba(16, 185, 129, 0.2));
+  border: 1px solid var(--cat-border, rgba(16, 185, 129, 0.45));
+  color: var(--text-primary);
+  padding: 2px 7px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: left;
+  overflow: hidden;
+  transition: transform 0.15s;
+}
+.timeline-event-block:hover {
+  transform: scale(1.01);
+  z-index: 2;
+}
+.timeline-event-block strong {
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.timeline-event-block span {
+  font-size: 8.5px;
+}
+@media (max-width: 760px) {
+  .timeline-ruler {
+    display: none;
+  }
+  .timeline-room-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-hairline);
+  }
+}
+
 

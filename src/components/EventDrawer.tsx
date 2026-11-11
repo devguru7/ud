@@ -3,7 +3,7 @@ import type { EventItem } from '../types';
 import { useApp, TG_BOT } from '../lib/store';
 import { Avatar, CapacityBar, CategoryBadge, Icon, Mono, Poster } from './UI';
 import { ROOMS } from '../lib/seed';
-import { canManage } from '../lib/logic';
+import { canManage, hasEventPermission } from '../lib/logic';
 import { STAFF_ROLE_LABEL } from '../lib/labels';
 import {
   copyText,
@@ -32,10 +32,18 @@ export default function EventDrawer() {
 function DrawerBody({ event }: { event: EventItem }) {
   const app = useApp();
   const [tab, setTab] = useState('overview');
+  const [rating, setRating] = useState(5);
+  const [feedbackComment, setFeedbackComment] = useState('');
+
   const ticket = app.myTicket(event.id);
   const room = ROOMS.find((r) => r.id === event.roomId);
   const manage = canManage(event, app.persona, app.state.clubs);
+  const canEdit = hasEventPermission(app.persona, event, app.state.clubs, 'create_events');
+  const canPublish = hasEventPermission(app.persona, event, app.state.clubs, 'publish_posts');
   const full = event.registeredCount >= event.capacity;
+
+  const linkedPosts = app.state.posts.filter((p) => p.linkedEventId === event.id);
+  const eventBroadcasts = app.state.broadcasts.filter((b) => b.eventId === event.id);
 
   const copyLink = async () => {
     const ok = await copyText(`${TG_BOT}?startapp=event_${event.id}`);
@@ -79,29 +87,29 @@ function DrawerBody({ event }: { event: EventItem }) {
             )}
           </div>
           <div className="drawer-toolbar-right">
-            {manage && (
-              <>
-                <button
-                  className="tool-btn"
-                  onClick={() => app.openEditEvent(event.id)}
-                  title="Edit event schedule, room, or connected student team"
-                >
-                  <Icon name="shield" size={14} /> Edit Event & Team
-                </button>
-                <button
-                  className="tool-btn"
-                  onClick={() =>
-                    app.openPostModal({
-                      defaultEventId: event.id,
-                      defaultClubId: event.hostClubId ?? undefined,
-                      defaultType: event.past ? 'event_recap' : 'event_promo',
-                    })
-                  }
-                  title="Publish a promo or recap post for this event"
-                >
-                  <Icon name="telegram" size={14} /> + {event.past ? 'Recap' : 'Promo'} Post
-                </button>
-              </>
+            {canEdit && (
+              <button
+                className="tool-btn"
+                onClick={() => app.openEditEvent(event.id)}
+                title="Edit event schedule, room, or connected student team"
+              >
+                <Icon name="edit" size={14} /> Edit Event & Team
+              </button>
+            )}
+            {canPublish && (
+              <button
+                className="tool-btn"
+                onClick={() =>
+                  app.openPostModal({
+                    defaultEventId: event.id,
+                    defaultClubId: event.hostClubId ?? undefined,
+                    defaultType: event.past ? 'event_recap' : 'event_promo',
+                  })
+                }
+                title="Publish a promo or recap post for this event"
+              >
+                <Icon name="telegram" size={14} /> + {event.past ? 'Recap' : 'Promo'} Post
+              </button>
             )}
             <button className="tool-btn" onClick={copyLink} title="Copy Telegram Mini App link">
               <Icon name="telegram" size={15} /> Copy TG link
@@ -146,6 +154,18 @@ function DrawerBody({ event }: { event: EventItem }) {
         <div className="drawer-scroll">
           {tab === 'overview' && (
             <div className="tab-pane">
+              {eventBroadcasts.length > 0 && (
+                <div className="commit-widget is-confirmed">
+                  <div className="commit-icon">
+                    <Icon name="telegram" size={18} />
+                  </div>
+                  <div className="commit-body">
+                    <strong>📣 Live Organizer Broadcast ({relativeTime(eventBroadcasts[0].at)})</strong>
+                    <p>{eventBroadcasts[0].text}</p>
+                  </div>
+                </div>
+              )}
+
               {ticket?.status === 'confirmed' || ticket?.status === 'checked_in' ? (
                 <div className={`commit-widget ${ticket.confirmedAttendance4h ? 'is-confirmed' : ''}`}>
                   <div className="commit-icon">
@@ -194,7 +214,7 @@ function DrawerBody({ event }: { event: EventItem }) {
                   <div className="commit-body">
                     <strong>Waitlist position #{ticket.waitlistPosition}</strong>
                     <p>
-                      {event.waitlistCount - 1} student{event.waitlistCount - 1 === 1 ? '' : 's'} ahead of you. If a
+                      {Math.max(0, event.waitlistCount - 1)} student{event.waitlistCount - 1 === 1 ? '' : 's'} ahead of you. If a
                       confirmed attendee releases a seat, the bot promotes you and sends a Telegram pass instantly.
                     </p>
                     <div className="commit-actions">
@@ -221,6 +241,39 @@ function DrawerBody({ event }: { event: EventItem }) {
                 <p>{event.description}</p>
               </div>
 
+              {/* Event Resources & Attachments */}
+              {event.attachments && event.attachments.length > 0 && (
+                <div className="agenda">
+                  <div className="panel-head">
+                    <h3>📎 Event Materials, Datasets & Slides</h3>
+                    <Mono>{event.attachments.length} FILES</Mono>
+                  </div>
+                  <div className="stack-sm">
+                    {event.attachments.map((att) => (
+                      <a
+                        key={att.id}
+                        href={att.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="person-card"
+                        style={{ textDecoration: 'none' }}
+                      >
+                        <span className="section-icon">
+                          <Icon name={att.kind === 'photos' ? 'image' : 'file'} size={16} />
+                        </span>
+                        <div className="person-main">
+                          <strong>{att.title}</strong>
+                          <span className="mono subtle">{att.kind.toUpperCase()} • {att.url}</span>
+                        </div>
+                        <span className="btn btn-ghost btn-xs">
+                          <Icon name="download" size={12} /> Open
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Part 2: Connected Event Team & Student Coordinators */}
               {visibleStaff.length > 0 && (
                 <div className="agenda">
@@ -239,6 +292,14 @@ function DrawerBody({ event }: { event: EventItem }) {
                             <Icon name="shield" size={11} /> {m.customLabel || STAFF_ROLE_LABEL[m.role]}
                           </span>
                         </div>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => app.setPersona(m.userId)}
+                          title={`Switch to ${m.name}'s account`}
+                        >
+                          Switch
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -286,6 +347,38 @@ function DrawerBody({ event }: { event: EventItem }) {
                 </ol>
               </div>
 
+              {linkedPosts.length > 0 && (
+                <div className="agenda">
+                  <div className="panel-head">
+                    <h3>📢 Linked Campus Feed Posts & Recaps</h3>
+                    <Mono>{linkedPosts.length} POSTS</Mono>
+                  </div>
+                  <div className="stack-sm">
+                    {linkedPosts.map((p) => (
+                      <div key={p.id} className="person-card">
+                        <div className="person-main">
+                          <strong>{p.title}</strong>
+                          <span className="person-prog">
+                            By {p.authorName} ({p.authorRoleTitle}) • {relativeTime(p.createdAt)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => {
+                            app.closeEvent();
+                            app.setExploreMode('posts');
+                            app.setView('explore');
+                          }}
+                        >
+                          View in Feed
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="location-card">
                 <div className="location-main">
                   <span className="location-icon"><Icon name="pin" size={18} /></span>
@@ -305,6 +398,62 @@ function DrawerBody({ event }: { event: EventItem }) {
                   <span className="equip-chip"><Icon name="check" size={12} /> Wi-Fi High-Density</span>
                 </div>
               </div>
+
+              {event.past && (
+                <div className="agenda">
+                  <div className="panel-head">
+                    <h3>⭐ Post-Event Ratings & Student Reviews ({(event.feedback ?? []).length})</h3>
+                    {event.issueCertificate && (
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-xs"
+                        onClick={() => app.openCertificate(event.id)}
+                      >
+                        <Icon name="award" size={13} /> Open My Certificate
+                      </button>
+                    )}
+                  </div>
+                  <div className="stack-sm">
+                    {(event.feedback ?? []).map((fb) => (
+                      <div key={fb.id} className="person-card">
+                        <Avatar name={fb.userName} size={32} />
+                        <div className="person-main">
+                          <strong>
+                            {fb.userName} • {'★'.repeat(fb.rating)}
+                          </strong>
+                          <span className="person-prog">{fb.comment}</span>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="qa-answer-form" style={{ marginTop: 8 }}>
+                      <select
+                        value={rating}
+                        onChange={(e) => setRating(Number(e.target.value))}
+                        aria-label="Star rating"
+                      >
+                        <option value={5}>★★★★★ (5/5)</option>
+                        <option value={4}>★★★★☆ (4/5)</option>
+                        <option value={3}>★★★☆☆ (3/5)</option>
+                      </select>
+                      <input
+                        value={feedbackComment}
+                        onChange={(e) => setFeedbackComment(e.target.value)}
+                        placeholder="Share your takeaway from this Boshlik session…"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-xs"
+                        onClick={() => {
+                          app.addEventFeedback(event.id, rating, feedbackComment);
+                          setFeedbackComment('');
+                        }}
+                      >
+                        Submit Review
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="register-panel">
                 <div className="register-head">
@@ -469,6 +618,10 @@ function PeopleTab({ event, ticket }: { event: EventItem; ticket?: ReturnType<Re
   const [skill, setSkill] = useState(ticket?.teamSkillTag ?? '');
   const [optIn, setOptIn] = useState(ticket?.lookingForTeam ?? false);
 
+  const [squadName, setSquadName] = useState('');
+  const [squadIdea, setSquadIdea] = useState('');
+  const [squadNeeded, setSquadNeeded] = useState('UI/UX Designer, Backend Python');
+
   const programmes = useMemo(
     () => ['All programmes', ...Array.from(new Set(event.attendees.map((a) => a.programmeShort)))],
     [event.attendees],
@@ -481,6 +634,26 @@ function PeopleTab({ event, ticket }: { event: EventItem; ticket?: ReturnType<Re
   });
 
   const teamCount = event.attendees.filter((a) => a.lookingForTeam).length;
+
+  const handleCreateSquad = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!squadName.trim()) return;
+    app.addEventSquad(event.id, {
+      name: squadName.trim(),
+      projectIdea: squadIdea.trim() || 'Building a prototype for this session.',
+      neededRoles: squadNeeded.split(',').map((s) => s.trim()).filter(Boolean),
+      members: [
+        {
+          userId: app.persona.id,
+          name: app.persona.name,
+          telegram: app.persona.telegram,
+          role: skill || app.persona.programmeShort || 'Squad Lead',
+        },
+      ],
+    });
+    setSquadName('');
+    setSquadIdea('');
+  };
 
   return (
     <div className="tab-pane">
@@ -518,6 +691,71 @@ function PeopleTab({ event, ticket }: { event: EventItem; ticket?: ReturnType<Re
         </div>
         {!ticket && <p className="hint">Claim a seat to unlock the matchmaker and connect with classmates.</p>}
       </div>
+
+      {/* Squads & Teams Forming */}
+      {event.teamFinder && (
+        <div className="agenda">
+          <div className="panel-head">
+            <h3>🤝 Squads & Study Teams Forming ({(event.squads ?? []).length})</h3>
+            <Mono>MAX 4 MEMBERS / SQUAD</Mono>
+          </div>
+          <div className="stack-sm">
+            {(event.squads ?? []).map((sq) => {
+              const isMember = sq.members.some((m) => m.userId === app.persona.id);
+              return (
+                <div key={sq.id} className="roster-row-card">
+                  <div className="roster-row-head">
+                    <strong>{sq.name}</strong>
+                    <span className="badge badge-success">{sq.members.length}/4 members</span>
+                    {!isMember && sq.members.length < 4 && (
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-xs"
+                        onClick={() => app.joinEventSquad(event.id, sq.id, sq.neededRoles[0] || 'Builder')}
+                      >
+                        <Icon name="userPlus" size={12} /> Join Squad
+                      </button>
+                    )}
+                  </div>
+                  <p className="hint">{sq.projectIdea}</p>
+                  <div className="equipment-chips">
+                    {sq.members.map((m) => (
+                      <span key={m.userId} className="equip-chip">
+                        <Icon name="check" size={11} /> {m.name} ({m.role})
+                      </span>
+                    ))}
+                    {sq.neededRoles.map((r) => (
+                      <span key={r} className="badge badge-sm badge-muted">
+                        Need: {r}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            <form className="qa-answer-form" onSubmit={handleCreateSquad}>
+              <input
+                value={squadName}
+                onChange={(e) => setSquadName(e.target.value)}
+                placeholder="New Squad Name (e.g., AgroQuant AI)"
+              />
+              <input
+                value={squadIdea}
+                onChange={(e) => setSquadIdea(e.target.value)}
+                placeholder="Project idea or study focus…"
+              />
+              <input
+                value={squadNeeded}
+                onChange={(e) => setSquadNeeded(e.target.value)}
+                placeholder="Needed roles (comma-separated)"
+              />
+              <button type="submit" className="btn btn-ghost btn-xs">
+                + Start Squad
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div className="people-filters">
         <select value={programme} onChange={(e) => setProgramme(e.target.value)} aria-label="Filter by programme">
@@ -674,6 +912,10 @@ function HostTab({ event, manage }: { event: EventItem; manage: boolean }) {
   const checked = Object.keys(event.checkIns).length;
   const seated = ticket?.status === 'confirmed' || ticket?.status === 'checked_in';
 
+  const canScan = hasEventPermission(app.persona, event, app.state.clubs, 'scan_tickets');
+  const canEdit = hasEventPermission(app.persona, event, app.state.clubs, 'create_events');
+  const canPublish = hasEventPermission(app.persona, event, app.state.clubs, 'publish_posts');
+
   if (!manage) {
     return (
       <div className="tab-pane">
@@ -688,7 +930,7 @@ function HostTab({ event, manage }: { event: EventItem; manage: boolean }) {
             <button
               className="btn btn-primary btn-sm"
               onClick={() => {
-                app.setPersona('usr_4');
+                app.setPersona('usr_1');
                 app.setView('organizer');
                 app.openOrganizer(event.id);
               }}
@@ -730,39 +972,47 @@ function HostTab({ event, manage }: { event: EventItem; manage: boolean }) {
         <div><Mono>WAITLIST</Mono><strong>{event.waitlistCount}</strong></div>
       </div>
       <div className="host-actions">
-        <button className="btn btn-primary" onClick={() => app.openOrganizer(event.id)}>
-          <Icon name="qr" size={15} /> Open QR scanner
-        </button>
-        <button className="btn btn-ghost" onClick={() => app.openEditEvent(event.id)}>
-          <Icon name="shield" size={15} /> Edit Event & Team
-        </button>
-        <button
-          className="btn btn-ghost"
-          onClick={() =>
-            app.openPostModal({
-              defaultEventId: event.id,
-              defaultClubId: event.hostClubId ?? undefined,
-              defaultType: event.past ? 'event_recap' : 'event_promo',
-            })
-          }
-        >
-          <Icon name="telegram" size={15} /> + {event.past ? 'Recap' : 'Promo'} Post
-        </button>
+        {canScan && (
+          <button className="btn btn-primary" onClick={() => app.openOrganizer(event.id)}>
+            <Icon name="qr" size={15} /> Open QR scanner
+          </button>
+        )}
+        {canEdit && (
+          <button className="btn btn-ghost" onClick={() => app.openEditEvent(event.id)}>
+            <Icon name="edit" size={15} /> Edit Event & Team
+          </button>
+        )}
+        {canPublish && (
+          <button
+            className="btn btn-ghost"
+            onClick={() =>
+              app.openPostModal({
+                defaultEventId: event.id,
+                defaultClubId: event.hostClubId ?? undefined,
+                defaultType: event.past ? 'event_recap' : 'event_promo',
+              })
+            }
+          >
+            <Icon name="telegram" size={15} /> + {event.past ? 'Recap' : 'Promo'} Post
+          </button>
+        )}
       </div>
-      <label className="field">
-        <span className="field-label">Capacity editor</span>
-        <span className="field-help">
-          Current capacity {event.capacity}; {seated ? 'you hold a seat here.' : 'you do not hold a seat here.'}
-        </span>
-        <input
-          type="range"
-          min={Math.max(event.registeredCount, 5)}
-          max={250}
-          value={event.capacity}
-          onChange={(e) => app.updateEventCapacity(event.id, Number(e.target.value))}
-        />
-        <Mono>{event.capacity} SEATS • {pct(event.registeredCount, event.capacity)}% FILLED</Mono>
-      </label>
+      {canEdit && (
+        <label className="field">
+          <span className="field-label">Capacity editor</span>
+          <span className="field-help">
+            Current capacity {event.capacity}; {seated ? 'you hold a seat here.' : 'you do not hold a seat here.'}
+          </span>
+          <input
+            type="range"
+            min={Math.max(event.registeredCount, 5)}
+            max={250}
+            value={event.capacity}
+            onChange={(e) => app.updateEventCapacity(event.id, Number(e.target.value))}
+          />
+          <Mono>{event.capacity} SEATS • {pct(event.registeredCount, event.capacity)}% FILLED</Mono>
+        </label>
+      )}
       <div className="host-scan-preview">
         <div className="scan-frame mini">
           <span className="scan-line" />

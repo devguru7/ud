@@ -11,10 +11,12 @@ import CertificateModal from './components/Certificate';
 import { PostModal } from './components/Posts';
 import { ConfirmDialog, ToastStack } from './components/Overlays';
 import { Icon } from './components/UI';
+import { t } from './lib/labels';
 
 const TAB_ICONS: Record<string, string> = {
   explore: 'compass',
   clubs: 'users',
+  studio: 'plus',
   passes: 'ticket',
   organizer: 'shield',
 };
@@ -27,10 +29,11 @@ function MobileNav() {
   const studioBadge =
     app.persona.role === 'admin' ? app.pendingApprovals : app.managedEventsCount;
   const items = [
-    { id: 'explore', label: 'Explore' },
-    { id: 'clubs', label: 'Clubs' },
-    { id: 'passes', label: 'Passes', badge: passCount },
-    { id: 'organizer', label: 'Studio', badge: studioBadge },
+    { id: 'explore', label: t(app.uiLang, 'explore') },
+    { id: 'clubs', label: t(app.uiLang, 'clubs') },
+    { id: 'studio', label: t(app.uiLang, 'hostEvent') },
+    { id: 'passes', label: t(app.uiLang, 'passes'), badge: passCount },
+    { id: 'organizer', label: t(app.uiLang, 'studio'), badge: studioBadge },
   ];
   return (
     <nav className="mobile-nav" aria-label="Mini app navigation">
@@ -71,7 +74,7 @@ function Footer() {
       </div>
       <p className="footer-note">
         Boshlik Campus · 3 Boshlik Street, Yakkasaray District, Tashkent. State persists
-        in <span className="mono">localStorage</span> under <span className="mono">udea_pulse_state_v1</span>.
+        in <span className="mono">localStorage</span> under <span className="mono">udea_pulse_state_v1</span> &amp; Firebase Cloud.
       </p>
       <div className="footer-actions">
         <a href="https://udea.uz/" target="_blank" rel="noreferrer" className="link-btn">

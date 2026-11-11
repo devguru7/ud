@@ -1,0 +1,127 @@
+{
+  "entities": {
+    "Event": {
+      "title": "Event",
+      "description": "Campus event or peer study meetup at UDEA Boshlik Campus",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "subtitle": { "type": "string", "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 4000 },
+        "category": { "type": "string", "enum": ["fintech", "tech", "academic", "sports", "culture"] },
+        "eventType": { "type": "string", "enum": ["official", "peer_meetup"] },
+        "approvalStatus": { "type": "string", "enum": ["approved", "pending_room_approval", "pending", "rejected", "cancelled"] },
+        "campus": { "type": "string", "enum": ["Boshlik", "Online"] },
+        "roomId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "date": { "type": "string", "minLength": 8, "maxLength": 16 },
+        "startTime": { "type": "string", "minLength": 4, "maxLength": 8 },
+        "endTime": { "type": "string", "minLength": 4, "maxLength": 8 },
+        "language": { "type": "string", "enum": ["EN", "UZ", "RU"] },
+        "hostClubId": { "type": "string", "maxLength": 64 },
+        "hostName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "capacity": { "type": "number" },
+        "registeredCount": { "type": "number" },
+        "waitlistCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "category", "eventType", "approvalStatus", "campus", "roomId", "date", "startTime", "endTime", "language", "hostName", "ownerUid", "capacity", "registeredCount", "waitlistCount", "createdAt", "updatedAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Campus feed announcement, event promo, recap, or discussion",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["announcement", "event_promo", "event_recap", "discussion"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "authorRoleTitle": { "type": "string", "maxLength": 120 },
+        "clubId": { "type": "string", "maxLength": 64 },
+        "linkedEventId": { "type": "string", "maxLength": 64 },
+        "pinned": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "title", "body", "authorId", "authorUid", "authorName", "createdAt", "updatedAt"]
+    },
+    "Club": {
+      "title": "Club",
+      "description": "Verified student union club or society at UDEA",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "short": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "category": { "type": "string", "enum": ["fintech", "tech", "academic", "sports", "culture"] },
+        "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "members": { "type": "number" },
+        "verified": { "type": "boolean" },
+        "color": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "short", "category", "description", "members", "verified", "color", "ownerUid", "createdAt", "updatedAt"]
+    },
+    "Ticket": {
+      "title": "Ticket",
+      "description": "QR entry pass or waitlist spot for a campus event",
+      "type": "object",
+      "properties": {
+        "ticketId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "eventId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "type": "string", "enum": ["confirmed", "waitlisted", "checked_in", "cancelled", "external_saved"] },
+        "qrHash": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ticketId", "eventId", "userId", "ownerUid", "status", "qrHash", "createdAt", "updatedAt"]
+    },
+    "WorkspaceSnapshot": {
+      "title": "WorkspaceSnapshot",
+      "description": "Synchronized campus state snapshot for an authenticated user",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "personaId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "theme": { "type": "string", "enum": ["light", "dark"] },
+        "uiLang": { "type": "string", "enum": ["EN", "UZ", "RU"] },
+        "payloadJson": { "type": "string", "minLength": 2, "maxLength": 900000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "personaId", "theme", "uiLang", "payloadJson", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/Event" },
+      "description": "Campus events and peer study sessions"
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Campus announcements, event promos, recaps, and discussions"
+    },
+    "/clubs/{clubId}": {
+      "schema": { "$ref": "#/entities/Club" },
+      "description": "Verified student clubs and societies"
+    },
+    "/tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/Ticket" },
+      "description": "Student event tickets and passes"
+    },
+    "/workspaces/{userId}": {
+      "schema": { "$ref": "#/entities/WorkspaceSnapshot" },
+      "description": "Per-user synchronized UDEA Pulse state snapshot"
+    }
+  }
+}

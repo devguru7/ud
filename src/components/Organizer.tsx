@@ -1,8 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../lib/store';
-import { PERSONAS, ROOMS, STUDENT_DIRECTORY } from '../lib/seed';
-import { canManage, findRoomConflicts, getUserRoleTitleForClub } from '../lib/logic';
-import { STAFF_ROLE_DEFAULT_PERMS, STAFF_ROLE_LABEL } from '../lib/labels';
+import { ROOMS } from '../lib/seed';
+import {
+  canManage,
+  findRoomConflicts,
+  getUserRoleTitleForClub,
+  hasEventPermission,
+} from '../lib/logic';
+import { PERMISSION_META, STAFF_ROLE_DEFAULT_PERMS, STAFF_ROLE_LABEL } from '../lib/labels';
 import { Avatar, CategoryBadge, EmptyState, Icon, Mono, SectionHeader } from './UI';
 import {
   buildCSV,
@@ -11,8 +16,9 @@ import {
   isoDate,
   pct,
   relativeTime,
+  uid,
 } from '../lib/utils';
-import type { EventItem, EventStaffRole, Person } from '../types';
+import type { EventItem, EventStaffRole, PermissionFlag, Person } from '../types';
 
 type GuestTab = 'all' | 'checked' | 'not' | 'waitlist' | 'screening';
 
@@ -35,18 +41,24 @@ export default function Organizer() {
   const [tab, setTab] = useState<GuestTab>('all');
   const [search, setSearch] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [cameraMode, setCameraMode] = useState(false);
+  const [manualCode, setManualCode] = useState('');
   const [lastScan, setLastScan] = useState<{ name: string; programme: string; hash: string } | null>(null);
   const [broadcastText, setBroadcastText] = useState('');
 
   // Quick team connection state
-  const [selectedStudentId, setSelectedStudentId] = useState(STUDENT_DIRECTORY[0].id);
+  const [selectedStudentId, setSelectedStudentId] = useState(app.directory[0]?.id ?? 'usr_4');
   const [staffRole, setStaffRole] = useState<EventStaffRole>('scanner_volunteer');
   const [staffLabel, setStaffLabel] = useState('QR Door Scanner Volunteer');
+  const [customPersonMode, setCustomPersonMode] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customTelegram, setCustomTelegram] = useState('');
 
   useEffect(() => {
     setLastScan(null);
     setTab('all');
     setSearch('');
+    setManualCode('');
   }, [current?.id]);
 
   const attendees: Person[] = current?.attendees ?? [];
@@ -61,6 +73,29 @@ export default function Organizer() {
       )
     : 0;
   const turnout = current ? pct(checkedIn.length, Math.max(current.registeredCount, 1)) : 0;
+
+  const canScan = current
+    ? hasEventPermission(app.persona, current, app.state.clubs, 'scan_tickets') ||
+      hasEventPermission(app.persona, current, app.state.clubs, 'manage_registrations')
+    : false;
+  const canManageReg = current
+    ? hasEventPermission(app.persona, current, app.state.clubs, 'manage_registrations')
+    : false;
+  const canBroadcast = current
+    ? hasEventPermission(app.persona, current, app.state.clubs, 'send_broadcasts')
+    : false;
+  const canEditEvent = current
+    ? hasEventPermission(app.persona, current, app.state.clubs, 'create_events') ||
+      hasEventPermission(app.persona, current, app.state.clubs, 'manage_roles') ||
+      current.createdBy === app.persona.id
+    : false;
+
+  const activePermissions = useMemo(() => {
+    if (!current) return [];
+    return PERMISSION_META.filter((m) =>
+      hasEventPermission(app.persona, current, app.state.clubs, m.id),
+    );
+  }, [current, app.persona, app.state.clubs]);
 
   const rows = useMemo(() => {
     return attendees.filter((a) => {
@@ -82,7 +117,7 @@ export default function Organizer() {
     : [];
 
   const scanNext = () => {
-    if (!current) return;
+    if (!current || !canScan) return;
     if (pending.length === 0) {
       app.pushToast({
         tone: 'info',
@@ -103,7 +138,21 @@ export default function Organizer() {
           .toUpperCase()}`,
       });
       setScanning(false);
-    }, 720);
+    }, 520);
+  };
+
+  const handleManualVerify = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!current || !manualCode.trim()) return;
+    const res = app.verifyTicketCode(current.id, manualCode);
+    if (res.ok) {
+      setLastScan({
+        name: res.message,
+        programme: 'Verified Pass',
+        hash: manualCode.trim().toUpperCase(),
+      });
+      setManualCode('');
+    }
   };
 
   const exportCSV = () => {
@@ -136,6 +185,7 @@ export default function Organizer() {
   const activeRoleTitle = current
     ? getUserRoleTitleForClub(app.persona, current.hostClubId ?? null, app.state.clubs)
     : null;
+  const connectedTeamRole = current?.teamMembers?.find((m) => m.userId === app.persona.id);
 
   return (
     <div className="organizer">
@@ -144,7 +194,7 @@ export default function Organizer() {
         title="Organizer Studio & Campus Admin"
         subtitle="Live turnout telemetry, offline QR check-in, delegated event team management, Telegram broadcasts and the room approval queue."
         action={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn btn-ghost btn-sm" onClick={() => app.openPostModal()}>
               <Icon name="telegram" size={14} /> + Publish Post
             </button>
@@ -161,9 +211,14 @@ export default function Organizer() {
           title="You are not hosting an event yet"
           message="Create a peer meetup, get delegated a club role, or switch to Soliyev Firdavs / Malika / Timur to unlock the organizer toolkit."
           action={
-            <button className="btn btn-primary" onClick={() => app.setView('studio')}>
-              Open Host Event Studio
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button className="btn btn-primary" onClick={() => app.setView('studio')}>
+                Open Host Event Studio
+              </button>
+              <button className="btn btn-teal" onClick={() => app.setPersona('usr_4')}>
+                Switch to Soliyev Firdavs (Coordinator)
+              </button>
+            </div>
           }
         />
       ) : (
@@ -171,7 +226,12 @@ export default function Organizer() {
           <div className="org-toolbar">
             <label className="org-select">
               <span className="mono subtle">
-                SELECT MANAGED EVENT ({sorted.length}){activeRoleTitle ? ` · ${activeRoleTitle.toUpperCase()}` : ''}
+                SELECT MANAGED EVENT ({sorted.length})
+                {activeRoleTitle
+                  ? ` · ${activeRoleTitle.toUpperCase()}`
+                  : connectedTeamRole
+                    ? ` · ${connectedTeamRole.customLabel.toUpperCase()}`
+                    : ''}
               </span>
               <select value={current?.id ?? ''} onChange={(e) => setSelectedId(e.target.value)}>
                 {sorted.map((e) => (
@@ -185,11 +245,19 @@ export default function Organizer() {
               <CategoryBadge category={current!.category} />
               <Mono>{dayLabel(current!.date)} • {current!.startTime}–{current!.endTime}</Mono>
               <Mono>{ROOMS.find((r) => r.id === current!.roomId)?.code}</Mono>
+              {canEditEvent && (
+                <button
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => app.openEditEvent(current!.id)}
+                >
+                  <Icon name="edit" size={12} /> Edit Event & Team
+                </button>
+              )}
               <button
                 className="btn btn-ghost btn-xs"
-                onClick={() => app.openEditEvent(current!.id)}
+                onClick={() => app.openCertificate(current!.id)}
               >
-                <Icon name="edit" size={12} /> Edit Event & Team
+                <Icon name="award" size={12} /> My Staff Certificate
               </button>
               <button
                 className="btn btn-ghost btn-xs"
@@ -203,6 +271,40 @@ export default function Organizer() {
               >
                 <Icon name="telegram" size={12} /> + Promo / Recap Post
               </button>
+            </div>
+          </div>
+
+          <div
+            className="card"
+            style={{
+              padding: '10px 14px',
+              marginBottom: 14,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span className="badge badge-teal">
+                <Icon name="shield" size={11} />{' '}
+                {app.persona.role === 'admin'
+                  ? 'CAMPUS ADMIN ACCESS'
+                  : current!.createdBy === app.persona.id
+                    ? 'EVENT CREATOR'
+                    : activeRoleTitle
+                      ? `CLUB ROLE: ${activeRoleTitle.toUpperCase()}`
+                      : connectedTeamRole
+                        ? `EVENT TEAM: ${connectedTeamRole.customLabel.toUpperCase()}`
+                        : 'ORGANIZER ACCESS'}
+              </span>
+              <span className="mono subtle">ACTIVE PERMISSIONS:</span>
+              {activePermissions.map((p) => (
+                <span key={p.id} className="badge badge-muted">
+                  ✓ {p.short}
+                </span>
+              ))}
             </div>
           </div>
 
@@ -240,9 +342,18 @@ export default function Organizer() {
             <section className="card scanner-card">
               <div className="panel-head">
                 <h2><Icon name="camera" size={17} /> Offline QR check-in</h2>
-                <span className="cache-badge">
-                  <i /> Offline Crypto-Hash Cache Ready ({current!.registeredCount}/{current!.registeredCount} passes stored)
-                </span>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-xs ${cameraMode ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setCameraMode((v) => !v)}
+                  >
+                    <Icon name="camera" size={12} /> {cameraMode ? 'Camera Active' : 'Camera View'}
+                  </button>
+                  <span className="cache-badge">
+                    <i /> Offline Cache ({current!.registeredCount} passes)
+                  </span>
+                </div>
               </div>
 
               <div className={`scanner-view ${scanning ? 'is-scanning' : ''}`}>
@@ -254,16 +365,34 @@ export default function Organizer() {
                 <span className="scanner-laser" />
                 <div className="scanner-center">
                   <Icon name="qr" size={64} />
-                  <span className="mono">{scanning ? 'VALIDATING HASH…' : 'POINT AT A STUDENT PASS'}</span>
+                  <span className="mono">
+                    {scanning
+                      ? 'VALIDATING CRYPTOGRAPHIC HASH…'
+                      : cameraMode
+                        ? 'CAMERA STREAM SIMULATED · HOLD QR PASS IN FRAME'
+                        : 'POINT AT A STUDENT PASS OR ENTER HASH BELOW'}
+                  </span>
                 </div>
               </div>
 
               <div className="scanner-actions">
-                <button className="btn btn-primary" onClick={scanNext} disabled={scanning}>
+                <button className="btn btn-primary" onClick={scanNext} disabled={scanning || !canScan}>
                   <Icon name="qr" size={15} /> {scanning ? 'Scanning…' : 'Simulate Next Student QR Scan'}
                 </button>
                 <span className="mono subtle">{pending.length} NOT YET SCANNED</span>
               </div>
+
+              <form onSubmit={handleManualVerify} style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={manualCode}
+                  onChange={(e) => setManualCode(e.target.value)}
+                  disabled={!canScan}
+                  placeholder="Enter QR hash (UDEA-...), Student ID, @telegram or name…"
+                />
+                <button type="submit" className="btn btn-ghost btn-sm" disabled={!canScan || !manualCode.trim()}>
+                  Verify & Check In
+                </button>
+              </form>
 
               {lastScan && (
                 <div className="scan-result">
@@ -289,13 +418,18 @@ export default function Organizer() {
               <textarea
                 rows={4}
                 value={broadcastText}
+                disabled={!canBroadcast}
                 onChange={(e) => setBroadcastText(e.target.value)}
-                placeholder="e.g. We moved from Room 204 to Lecture Hall A1 due to high demand!"
+                placeholder={
+                  canBroadcast
+                    ? 'e.g. We moved from Room 204 to Lecture Hall A1 due to high demand!'
+                    : 'Your current staff role does not include broadcast permissions.'
+                }
               />
               <div className="broadcast-actions">
                 <button
                   className="btn btn-primary"
-                  disabled={broadcastText.trim().length < 4}
+                  disabled={!canBroadcast || broadcastText.trim().length < 4}
                   onClick={() => {
                     if (!current) return;
                     app.broadcast(current.id, broadcastText);
@@ -330,85 +464,152 @@ export default function Organizer() {
           <section className="card guest-card" style={{ marginBottom: 16 }}>
             <div className="panel-head">
               <h2><Icon name="users" size={17} /> Connected Event Team & Volunteers ({current!.teamMembers?.length ?? 0})</h2>
-              <Mono>DELEGATED EVENT STAFF</Mono>
-            </div>
-            <div className="field-row three" style={{ marginBottom: 12 }}>
-              <label className="field">
-                <span className="field-label">Select Student</span>
-                <select value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
-                  {STUDENT_DIRECTORY.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.telegram})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span className="field-label">Staff Role</span>
-                <select
-                  value={staffRole}
-                  onChange={(e) => {
-                    const r = e.target.value as EventStaffRole;
-                    setStaffRole(r);
-                    setStaffLabel(STAFF_ROLE_LABEL[r]);
-                  }}
-                >
-                  {(Object.keys(STAFF_ROLE_LABEL) as EventStaffRole[]).map((r) => (
-                    <option key={r} value={r}>
-                      {STAFF_ROLE_LABEL[r]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span className="field-label">Custom Role Badge</span>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    value={staffLabel}
-                    onChange={(e) => setStaffLabel(e.target.value)}
-                    placeholder="e.g. QR Door Volunteer"
-                  />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {canEditEvent && (
                   <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      const dir = STUDENT_DIRECTORY.find((s) => s.id === selectedStudentId);
-                      if (!dir || !current) return;
-                      app.addEventTeamMember(current.id, {
-                        userId: dir.id,
-                        name: dir.name,
-                        telegram: dir.telegram,
-                        programme: dir.programme,
-                        role: staffRole,
-                        customLabel: staffLabel.trim() || STAFF_ROLE_LABEL[staffRole],
-                        permissions: STAFF_ROLE_DEFAULT_PERMS[staffRole],
-                        showOnEventPage: true,
-                      });
+                    type="button"
+                    className={`btn btn-xs ${customPersonMode ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setCustomPersonMode((v) => !v)}
+                  >
+                    <Icon name="userPlus" size={12} /> {customPersonMode ? 'Pick Directory' : '+ New Student'}
+                  </button>
+                )}
+                <Mono>DELEGATED EVENT STAFF</Mono>
+              </div>
+            </div>
+            {canEditEvent && (
+              <div className="field-row three" style={{ marginBottom: 12 }}>
+                {customPersonMode ? (
+                  <label className="field">
+                    <span className="field-label">New Student Name & @Telegram</span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        value={customName}
+                        onChange={(e) => setCustomName(e.target.value)}
+                        placeholder="Full Name"
+                      />
+                      <input
+                        value={customTelegram}
+                        onChange={(e) => setCustomTelegram(e.target.value)}
+                        placeholder="@handle"
+                      />
+                    </div>
+                  </label>
+                ) : (
+                  <label className="field">
+                    <span className="field-label">Select Student</span>
+                    <select value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
+                      {app.directory.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.telegram})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="field">
+                  <span className="field-label">Staff Role</span>
+                  <select
+                    value={staffRole}
+                    onChange={(e) => {
+                      const r = e.target.value as EventStaffRole;
+                      setStaffRole(r);
+                      setStaffLabel(STAFF_ROLE_LABEL[r]);
                     }}
                   >
-                    + Connect
-                  </button>
-                </div>
-              </label>
-            </div>
+                    {(Object.keys(STAFF_ROLE_LABEL) as EventStaffRole[]).map((r) => (
+                      <option key={r} value={r}>
+                        {STAFF_ROLE_LABEL[r]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field-label">Custom Role Badge</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      value={staffLabel}
+                      onChange={(e) => setStaffLabel(e.target.value)}
+                      placeholder="e.g. QR Door Volunteer"
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        if (!current) return;
+                        if (customPersonMode) {
+                          if (customName.trim().length < 2) return;
+                          const tg = customTelegram.trim()
+                            ? customTelegram.trim().startsWith('@')
+                              ? customTelegram.trim()
+                              : `@${customTelegram.trim()}`
+                            : `@${customName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+                          app.addEventTeamMember(current.id, {
+                            userId: `stu_${uid('usr')}`,
+                            name: customName.trim(),
+                            telegram: tg,
+                            programme: 'BSc Digital Economics (Coventry)',
+                            role: staffRole,
+                            customLabel: staffLabel.trim() || STAFF_ROLE_LABEL[staffRole],
+                            permissions: STAFF_ROLE_DEFAULT_PERMS[staffRole],
+                            showOnEventPage: true,
+                          });
+                          setCustomName('');
+                          setCustomTelegram('');
+                          return;
+                        }
+                        const dir = app.directory.find((s) => s.id === selectedStudentId);
+                        if (!dir) return;
+                        app.addEventTeamMember(current.id, {
+                          userId: dir.id,
+                          name: dir.name,
+                          telegram: dir.telegram,
+                          programme: dir.programme,
+                          role: staffRole,
+                          customLabel: staffLabel.trim() || STAFF_ROLE_LABEL[staffRole],
+                          permissions: STAFF_ROLE_DEFAULT_PERMS[staffRole],
+                          showOnEventPage: true,
+                        });
+                      }}
+                    >
+                      + Connect
+                    </button>
+                  </div>
+                </label>
+              </div>
+            )}
             {(current!.teamMembers ?? []).length === 0 ? (
               <p className="hint">No additional team members connected to this event yet.</p>
             ) : (
               <div className="roster-stack">
                 {(current!.teamMembers ?? []).map((tm) => (
                   <div key={tm.userId} className="roster-row-card">
-                    <Avatar name={tm.name} color="#0D9488" size={32} />
-                    <div className="roster-row-main">
-                      <strong>{tm.name}</strong>
-                      <span className="mono">
-                        {tm.customLabel} · {tm.telegram} · {tm.programme}
-                      </span>
+                    <div className="roster-row-head">
+                      <Avatar name={tm.name} color="#0D9488" size={32} />
+                      <div className="roster-row-main">
+                        <strong>{tm.name}</strong>
+                        <span className="mono">
+                          {tm.customLabel} · {tm.telegram} · {tm.programme}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {app.personas.some((p) => p.id === tm.userId) && (
+                          <button
+                            className="btn btn-teal btn-xs"
+                            onClick={() => app.setPersona(tm.userId)}
+                          >
+                            ⚡ Switch
+                          </button>
+                        )}
+                        {canEditEvent && (
+                          <button
+                            className="btn btn-ghost btn-xs danger-text"
+                            onClick={() => app.removeEventTeamMember(current!.id, tm.userId)}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <button
-                      className="btn btn-ghost btn-xs danger-text"
-                      onClick={() => app.removeEventTeamMember(current!.id, tm.userId)}
-                    >
-                      Remove
-                    </button>
                   </div>
                 ))}
               </div>
@@ -451,18 +652,40 @@ export default function Organizer() {
                 {current!.waitlistRoster.length === 0 ? (
                   <p className="hint">No one is waiting for a seat on this event.</p>
                 ) : (
-                  current!.waitlistRoster.map((w, i) => (
-                    <div key={w.id} className="guest-row">
-                      <Avatar name={w.name} color="#F97316" size={30} />
-                      <div className="guest-name">
-                        <strong>{w.name}</strong>
-                        <span className="mono">{w.studentId} · {w.telegram}</span>
+                  <>
+                    {canManageReg && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 6px 10px' }}>
+                        <span className="mono subtle">WAITLIST QUEUE ({current!.waitlistRoster.length} WAITING)</span>
+                        <button
+                          className="btn btn-teal btn-xs"
+                          onClick={() => app.promoteWaitlistEntry(current!.id, current!.waitlistRoster[0].id)}
+                        >
+                          ⚡ Promote #1 Waitlisted Student Now
+                        </button>
                       </div>
-                      <span className="guest-prog">{w.programmeShort}</span>
-                      <span className="status-chip is-waitlist">WAITLIST #{i + 1}</span>
-                      <span className="guest-action mono">AUTO-PROMOTE</span>
-                    </div>
-                  ))
+                    )}
+                    {current!.waitlistRoster.map((w, i) => (
+                      <div key={w.id} className="guest-row">
+                        <Avatar name={w.name} color="#F97316" size={30} />
+                        <div className="guest-name">
+                          <strong>{w.name}</strong>
+                          <span className="mono">{w.studentId} · {w.telegram}</span>
+                        </div>
+                        <span className="guest-prog">{w.programmeShort}</span>
+                        <span className="status-chip is-waitlist">WAITLIST #{i + 1}</span>
+                        {canManageReg ? (
+                          <button
+                            className="btn btn-primary btn-xs"
+                            onClick={() => app.promoteWaitlistEntry(current!.id, w.id)}
+                          >
+                            Promote Now
+                          </button>
+                        ) : (
+                          <span className="guest-action mono">AUTO-PROMOTE</span>
+                        )}
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
             ) : tab === 'screening' ? (
@@ -471,7 +694,7 @@ export default function Organizer() {
                   <p className="hint">No screening applications are waiting for review.</p>
                 ) : (
                   screeningTickets.map((t) => {
-                    const p = PERSONAS.find((x) => x.id === t.userId);
+                    const p = app.personas.find((x) => x.id === t.userId);
                     return (
                       <div key={t.ticketId} className="guest-row">
                         <Avatar name={p?.name ?? 'Applicant'} color={p?.color ?? '#2563EB'} size={30} />
@@ -480,12 +703,22 @@ export default function Organizer() {
                           <span>{t.screeningAnswer || 'No answer provided'}</span>
                         </div>
                         <span className="status-chip is-pending">SCREENING PENDING</span>
-                        <button
-                          className="btn btn-primary btn-xs"
-                          onClick={() => app.approveScreeningTicket(t.ticketId)}
-                        >
-                          Approve
-                        </button>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            className="btn btn-primary btn-xs"
+                            disabled={!canManageReg}
+                            onClick={() => app.approveScreeningTicket(t.ticketId)}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-xs danger-text"
+                            disabled={!canManageReg}
+                            onClick={() => app.declineScreeningTicket(t.ticketId)}
+                          >
+                            Decline
+                          </button>
+                        </div>
                       </div>
                     );
                   })
@@ -516,11 +749,19 @@ export default function Organizer() {
                           <span className="status-chip is-away">NOT ARRIVED</span>
                         )}
                         {checkedAt ? (
-                          <button className="btn btn-ghost btn-xs" onClick={() => app.undoCheckIn(current!.id, a.id)}>
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            disabled={!canScan}
+                            onClick={() => app.undoCheckIn(current!.id, a.id)}
+                          >
                             Undo
                           </button>
                         ) : (
-                          <button className="btn btn-primary btn-xs" onClick={() => app.checkInPerson(current!.id, a.id)}>
+                          <button
+                            className="btn btn-primary btn-xs"
+                            disabled={!canScan}
+                            onClick={() => app.checkInPerson(current!.id, a.id)}
+                          >
                             <Icon name="check" size={12} /> Check in
                           </button>
                         )}
@@ -575,6 +816,7 @@ function ApprovalCard({ event }: { event: EventItem }) {
       findRoomConflicts(app.state.events, r.id, event.date, event.startTime, event.endTime, event.id).length === 0,
   );
   const [suggested, setSuggested] = useState(freeRooms[0]?.id ?? '');
+  const [adminNote, setAdminNote] = useState('');
 
   return (
     <div className="approval-card">
@@ -603,6 +845,12 @@ function ApprovalCard({ event }: { event: EventItem }) {
           <span key={eq} className="equip-chip"><Icon name="check" size={11} /> {eq}</span>
         ))}
       </div>
+      <input
+        value={adminNote}
+        onChange={(e) => setAdminNote(e.target.value)}
+        placeholder="Optional admin feedback note to organizer…"
+        style={{ fontSize: 11.5, padding: '6px 9px' }}
+      />
       {freeRooms.length > 0 && (
         <div className="suggest-row">
           <select value={suggested} onChange={(e) => setSuggested(e.target.value)} aria-label="Suggested room">
@@ -612,7 +860,7 @@ function ApprovalCard({ event }: { event: EventItem }) {
           </select>
           <button
             className="btn btn-ghost btn-xs"
-            onClick={() => app.rejectEvent(event.id, suggested || freeRooms[0].id)}
+            onClick={() => app.rejectEvent(event.id, suggested || freeRooms[0].id, adminNote)}
           >
             Suggest room
           </button>
@@ -620,7 +868,10 @@ function ApprovalCard({ event }: { event: EventItem }) {
       )}
       <div className="approval-actions">
         <button className="btn btn-primary btn-sm" onClick={() => app.approveEvent(event.id)}>
-          <Icon name="check" size={14} /> Approve & Auto-Post to Telegram
+          <Icon name="check" size={14} /> Approve & Auto-Post
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={() => app.openEvent(event.id)}>
+          Preview
         </button>
         <button
           className="btn btn-ghost btn-sm danger-text"
@@ -631,7 +882,7 @@ function ApprovalCard({ event }: { event: EventItem }) {
               confirmLabel: 'Reject event',
               tone: 'danger',
             });
-            if (ok) app.rejectEvent(event.id);
+            if (ok) app.rejectEvent(event.id, undefined, adminNote);
           }}
         >
           Reject

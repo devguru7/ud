@@ -1,4 +1,4 @@
-import type { BoshlikZone, Club, EventStaffRole, PermissionFlag, Persona, Role } from '../types';
+import type { BoshlikZone, Club, EventStaffRole, Lang, PermissionFlag, Persona, Role } from '../types';
 import { getPrimaryRoleBadgeForUser } from './logic';
 
 export const LONG_ROLE: Record<Role, string> = {
@@ -79,6 +79,68 @@ export const STAFF_ROLE_DEFAULT_PERMS: Record<EventStaffRole, PermissionFlag[]> 
   scanner_volunteer: ['scan_tickets'],
   speaker: ['publish_posts'],
 };
+
+export const UI_TEXT: Record<Lang, Record<string, string>> = {
+  EN: {
+    explore: 'Explore',
+    clubs: 'Clubs',
+    passes: 'Passes',
+    organizer: 'Organizer',
+    studio: 'Studio',
+    hostEvent: 'Host Event',
+    newPost: 'Post',
+    upcomingEvents: 'Upcoming Events',
+    campusFeed: 'Campus Pulse Feed',
+    eventsOnly: 'Events Only',
+    postsAndNews: 'Posts & News',
+    searchPlaceholder: 'Search events, clubs, rooms, speakers or posts…',
+    roomsTimeline: 'Boshlik Rooms Timeline',
+    startsIn: 'STARTS IN',
+    claimPass: 'Claim QR Pass',
+    viewPass: 'View My QR Pass',
+  },
+  UZ: {
+    explore: 'Tadbirlar',
+    clubs: 'Klublar',
+    passes: 'Chiptalar',
+    organizer: 'Tashkilotchi',
+    studio: 'Studiya',
+    hostEvent: 'Tadbir yaratish',
+    newPost: 'Post',
+    upcomingEvents: 'Kelgusi tadbirlar',
+    campusFeed: 'Kampus yangiliklari',
+    eventsOnly: 'Faqat tadbirlar',
+    postsAndNews: 'Postlar va e’lonlar',
+    searchPlaceholder: 'Tadbirlar, klublar, xonalar yoki spikerlarni qidiring…',
+    roomsTimeline: 'Boshlik xonalar jadvali',
+    startsIn: 'BOSHLANISHIGA',
+    claimPass: 'QR chipta olish',
+    viewPass: 'QR chiptamni ko‘rish',
+  },
+  RU: {
+    explore: 'События',
+    clubs: 'Клубы',
+    passes: 'Билеты',
+    organizer: 'Оргкомитет',
+    studio: 'Студия',
+    hostEvent: 'Создать',
+    newPost: 'Пост',
+    upcomingEvents: 'Предстоящие события',
+    campusFeed: 'Лента кампуса',
+    eventsOnly: 'Только события',
+    postsAndNews: 'Посты и новости',
+    searchPlaceholder: 'Поиск событий, клубов, аудиторий и спикеров…',
+    roomsTimeline: 'Расписание аудиторий Бошлик',
+    startsIn: 'ДО НАЧАЛА',
+    claimPass: 'Получить QR-пропуск',
+    viewPass: 'Мой QR-пропуск',
+  },
+};
+
+export function t(lang: Lang | undefined, key: string): string {
+  const active = lang || 'EN';
+  return UI_TEXT[active]?.[key] ?? UI_TEXT.EN[key] ?? key;
+}
 
 export function personaRoleLabel(personaOrRole: Persona | Role, clubs?: Club[]): string {
   if (typeof personaOrRole === 'string') {

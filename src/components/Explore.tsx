@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../lib/store';
 import EventCard from './EventCard';
 import { PostCard } from './Posts';
-import { Avatar, CapacityBar, CategoryBadge, Icon, Mono, SectionHeader } from './UI';
+import { Avatar, CategoryBadge, Icon, Mono, SectionHeader } from './UI';
 import {
   CATEGORY_LABEL,
   MONTHS,
@@ -13,15 +13,17 @@ import {
   fmtCountdown,
   isFull,
   isoDate,
+  isoOffset,
   longDate,
+  minutesFromTime,
   monthMatrix,
   parseDateTime,
   pct,
   WEEKDAYS,
 } from '../lib/utils';
-import type { Category, EventItem, ExploreFeedMode } from '../types';
+import type { Category, EventItem, EventSortMode, ExploreFeedMode, Lang } from '../types';
 import { ROOMS } from '../lib/seed';
-import { BOSHLIK_ZONES } from '../lib/labels';
+import { BOSHLIK_ZONES, t } from '../lib/labels';
 
 const CATEGORIES: { id: Category | 'all'; label: string }[] = [
   { id: 'all', label: 'All Categories' },
@@ -30,6 +32,14 @@ const CATEGORIES: { id: Category | 'all'; label: string }[] = [
   { id: 'academic', label: 'Academic & ACCA' },
   { id: 'sports', label: 'Sports & Cybersport' },
   { id: 'culture', label: 'Debate & Social' },
+];
+
+const SORT_OPTIONS: { id: EventSortMode; label: string }[] = [
+  { id: 'soonest', label: '⏱️ Soonest' },
+  { id: 'popular', label: '🔥 Most Popular' },
+  { id: 'seats', label: '🪑 Open Seats' },
+  { id: 'saved', label: '🔖 Saved' },
+  { id: 'my_schedule', label: '🎟️ My Schedule' },
 ];
 
 function useNow(intervalMs = 1000) {
@@ -63,6 +73,8 @@ function Spotlight() {
     app.rsvp(event.id);
   };
 
+  const isHackathon = event.id === 'evt_1';
+
   return (
     <section className={`spotlight cat-${event.category}`} aria-label="Flagship spotlight">
       <div className="spotlight-bg">
@@ -72,16 +84,26 @@ function Spotlight() {
       </div>
       <div className="spotlight-content">
         <div className="spotlight-eyebrow">
-          <span className="partner-chip">BOSHLIK CAMPUS FLAGSHIP</span>
-          <span className="partner-chip">COVENTRY VALIDATED</span>
-          <span className="partner-chip">CERTIFICATE + 15M UZS PRIZE POOL</span>
+          <span className="partner-chip">
+            {isHackathon ? 'BOSHLIK CAMPUS FLAGSHIP' : `${event.campus.toUpperCase()} FLAGSHIP`}
+          </span>
+          <span className="partner-chip">
+            {isHackathon ? 'COVENTRY VALIDATED' : event.hostName.toUpperCase()}
+          </span>
+          <span className="partner-chip">
+            {isHackathon
+              ? 'CERTIFICATE + 15M UZS PRIZE POOL'
+              : event.issueCertificate
+                ? 'VERIFIED CERTIFICATE'
+                : CATEGORY_LABEL[event.category].toUpperCase()}
+          </span>
         </div>
 
         <h1 className="spotlight-title">{event.title}</h1>
         <p className="spotlight-sub">{event.subtitle}</p>
 
         <div className="spotlight-countdown">
-          <span className="mono countdown-label">STARTS IN</span>
+          <span className="mono countdown-label">{t(app.uiLang, 'startsIn')}</span>
           <span className="mono countdown-value">{countdown}</span>
           <span className="mono countdown-date">{dayLabel(event.date)} • {event.startTime}–{event.endTime}</span>
         </div>
@@ -162,6 +184,12 @@ function CalendarCard() {
     setCursor({ year: d.getFullYear(), month: d.getMonth() });
   };
 
+  const jumpToday = () => {
+    const now = new Date();
+    setCursor({ year: now.getFullYear(), month: now.getMonth() });
+    app.setFilters({ date: isoDate(now) });
+  };
+
   return (
     <div className="card calendar-card">
       <div className="calendar-head">
@@ -170,6 +198,9 @@ function CalendarCard() {
           <h2>{MONTHS[cursor.month]} {cursor.year}</h2>
         </div>
         <div className="calendar-nav">
+          <button type="button" className="btn btn-ghost btn-xs" onClick={jumpToday}>
+            Today
+          </button>
           <button className="icon-btn sm" onClick={() => shift(-1)} aria-label="Previous month">
             <Icon name="chevron" size={14} className="rot-180" />
           </button>
@@ -181,7 +212,7 @@ function CalendarCard() {
 
       <div className="calendar-grid calendar-weekdays">
         {WEEKDAYS.map((d) => (
-          <span key={d} className="mono">{d.slice(0, 1)}</span>
+          <span key={d} className="mono">{d}</span>
         ))}
       </div>
       <div className="calendar-grid">
@@ -216,7 +247,7 @@ function CalendarCard() {
             <Icon name="close" size={12} />
           </button>
         ) : (
-          <span className="calendar-hint">Tap any date to filter the feed.</span>
+          <span className="calendar-hint">Monday-first grid • tap any date to filter.</span>
         )}
         <div className="cal-legend">
           {(['fintech', 'tech', 'academic', 'sports', 'culture'] as Category[]).map((c) => (
@@ -234,7 +265,7 @@ function Radar() {
   const approved = app.state.events
     .filter((e) => e.approvalStatus === 'approved' && !e.past)
     .map((e) => ({ e, start: parseDateTime(e.date, e.startTime).getTime() }))
-    .filter((x) => x.start + 3 * 3600 * 1000 >= now)
+    .filter((x) => x.start + 6 * 3600 * 1000 >= now)
     .sort((a, b) => a.start - b.start);
   const next24 = approved.filter((x) => x.start - now <= 24 * 3600 * 1000);
   const list = (next24.length ? next24 : approved).slice(0, 4);
@@ -299,13 +330,14 @@ function DateRibbon() {
         {days.map(({ iso, date }) => {
           const events = approved.filter((e) => e.date === iso);
           const cats = Array.from(new Set(events.map((e) => e.category))).slice(0, 3);
+          const shortWday = dayLabel(iso).split(' ')[0];
           return (
             <button
               key={iso}
               className={`ribbon-day ${selected === iso ? 'is-selected' : ''} ${iso === isoDate() ? 'is-today' : ''}`}
               onClick={() => app.setFilters({ date: selected === iso ? null : iso })}
             >
-              <span className="mono">{WEEKDAYS[date.getDay()]}</span>
+              <span className="mono">{shortWday}</span>
               <strong>{date.getDate()}</strong>
               <span className="mono">{MONTHS_SHORT[date.getMonth()]}</span>
               <em>{events.length} event{events.length === 1 ? '' : 's'}</em>
@@ -322,21 +354,145 @@ function DateRibbon() {
   );
 }
 
+function BoshlikRoomsTimeline({ selectedDate }: { selectedDate: string }) {
+  const app = useApp();
+  const physicalRooms = ROOMS.filter((r) => r.campus === 'Boshlik');
+  const dayStart = 9 * 60; // 09:00
+  const dayEnd = 21 * 60;  // 21:00
+  const totalMins = dayEnd - dayStart;
+  const hours = [9, 11, 13, 15, 17, 19, 21];
+
+  const dayEvents = app.state.events.filter(
+    (e) =>
+      e.date === selectedDate &&
+      (e.approvalStatus === 'approved' || e.approvalStatus === 'pending_room_approval'),
+  );
+
+  return (
+    <div className="card rooms-timeline-card">
+      <div className="panel-head">
+        <div>
+          <span className="mono subtle">BOSHLIK STREET 3 · LIVE ROOM OCCUPANCY & CONFLICT MATRIX</span>
+          <h3>🏫 Boshlik Campus Rooms Timeline — {longDate(selectedDate)}</h3>
+        </div>
+        <div className="feed-actions">
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => app.setFilters({ date: isoOffset(0) })}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => app.setFilters({ date: isoOffset(1) })}
+          >
+            Tomorrow
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-xs"
+            onClick={() => {
+              app.clearEditingEvent();
+              app.setView('studio');
+            }}
+          >
+            <Icon name="plus" size={12} /> Book a Room
+          </button>
+        </div>
+      </div>
+
+      <div className="timeline-ruler">
+        <span className="timeline-room-col mono subtle">BOSHLIK VENUE</span>
+        <div className="timeline-track-head">
+          {hours.map((h) => (
+            <span key={h} className="mono subtle">
+              {String(h).padStart(2, '0')}:00
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="timeline-rows">
+        {physicalRooms.map((room) => {
+          const roomEvs = dayEvents.filter((e) => e.roomId === room.id);
+          return (
+            <div key={room.id} className="timeline-room-row">
+              <div className="timeline-room-info">
+                <strong>{room.code}</strong>
+                <span className="mono subtle">
+                  {room.floor} · Cap {room.capacity}
+                </span>
+              </div>
+              <div className="timeline-bar-track">
+                {roomEvs.length === 0 ? (
+                  <button
+                    type="button"
+                    className="timeline-free-btn"
+                    onClick={() => {
+                      app.clearEditingEvent();
+                      app.setView('studio');
+                    }}
+                  >
+                    ✓ Available all day (09:00–21:00) — Click to book {room.code}
+                  </button>
+                ) : (
+                  roomEvs.map((ev) => {
+                    const s = Math.max(dayStart, minutesFromTime(ev.startTime));
+                    const e = Math.min(dayEnd, minutesFromTime(ev.endTime));
+                    const left = Math.max(0, Math.min(92, ((s - dayStart) / totalMins) * 100));
+                    const width = Math.max(12, Math.min(100 - left, ((e - s) / totalMins) * 100));
+                    const isPending = ev.approvalStatus === 'pending_room_approval';
+                    return (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        className={`timeline-event-block cat-${ev.category} ${isPending ? 'is-pending' : ''}`}
+                        style={{ left: `${left}%`, width: `${width}%` }}
+                        onClick={() => app.openEvent(ev.id)}
+                        title={`${ev.title} (${ev.startTime}–${ev.endTime})`}
+                      >
+                        <strong>{ev.title}</strong>
+                        <span className="mono">
+                          {ev.startTime}–{ev.endTime} {isPending ? '• PENDING' : ''}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Explore() {
   const app = useApp();
   const { filters } = app.state;
+  const [showRoomsTimeline, setShowRoomsTimeline] = useState(false);
+
   const approved = app.state.events.filter((e) => e.approvalStatus === 'approved' && !e.past);
+  const sortMode: EventSortMode = filters.sort ?? 'soonest';
 
   const scoped = approved.filter((e) => {
     if (filters.date && e.date !== filters.date) return false;
+    if (filters.clubId && e.hostClubId !== filters.clubId && !e.coHostClubIds?.includes(filters.clubId)) {
+      return false;
+    }
     if (filters.category !== 'all' && e.category !== filters.category) return false;
     if (filters.campus !== 'all' && e.campus !== filters.campus) return false;
-    // Part 1: Boshlik Venue Zone Filter
     if (filters.zone !== 'all') {
       const rm = ROOMS.find((r) => r.id === e.roomId);
       if (rm?.zone !== filters.zone) return false;
     }
     if (filters.language !== 'all' && e.language !== filters.language) return false;
+    if (sortMode === 'saved' && !app.isEventSaved(e.id)) return false;
+    if (sortMode === 'my_schedule' && !app.myTicket(e.id)) return false;
+
     if (filters.search.trim()) {
       const q = filters.search.toLowerCase();
       const room = ROOMS.find((r) => r.id === e.roomId);
@@ -361,6 +517,7 @@ export default function Explore() {
     const q = filters.search.trim().toLowerCase();
     return [...app.state.posts]
       .filter((p) => {
+        if (filters.clubId && p.clubId !== filters.clubId) return false;
         if (filters.category !== 'all') {
           const club = p.clubId ? app.state.clubs.find((c) => c.id === p.clubId) : undefined;
           const ev = p.linkedEventId ? app.state.events.find((e) => e.id === p.linkedEventId) : undefined;
@@ -377,7 +534,7 @@ export default function Explore() {
         if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
         return b.createdAt.localeCompare(a.createdAt);
       });
-  }, [app.state.posts, filters.category, filters.search, app.state.clubs, app.state.events]);
+  }, [app.state.posts, filters.category, filters.clubId, filters.search, app.state.clubs, app.state.events]);
 
   const trackCounts = {
     all: scoped.length,
@@ -387,16 +544,24 @@ export default function Explore() {
 
   const feed = scoped
     .filter((e) => (filters.track === 'all' ? true : e.eventType === filters.track))
-    .sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
+    .sort((a, b) => {
+      if (sortMode === 'popular') return b.registeredCount - a.registeredCount;
+      if (sortMode === 'seats') return eventSeatsLeft(b) - eventSeatsLeft(a);
+      return `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`);
+    });
 
   const activeFilterCount =
     (filters.date ? 1 : 0) +
+    (filters.clubId ? 1 : 0) +
     (filters.category !== 'all' ? 1 : 0) +
     (filters.campus !== 'all' ? 1 : 0) +
     (filters.zone !== 'all' ? 1 : 0) +
     (filters.language !== 'all' ? 1 : 0) +
     (filters.search.trim() ? 1 : 0) +
-    (filters.track !== 'all' ? 1 : 0);
+    (filters.track !== 'all' ? 1 : 0) +
+    (sortMode !== 'soonest' ? 1 : 0);
+
+  const activeClub = filters.clubId ? app.state.clubs.find((c) => c.id === filters.clubId) : undefined;
 
   return (
     <div className="explore">
@@ -433,6 +598,13 @@ export default function Explore() {
                   </button>
                 ))}
               </div>
+              <button
+                type="button"
+                className={`btn ${showRoomsTimeline ? 'btn-violet' : 'btn-ghost'} btn-sm`}
+                onClick={() => setShowRoomsTimeline((v) => !v)}
+              >
+                <Icon name="map" size={14} /> {t(app.uiLang, 'roomsTimeline')}
+              </button>
               <button className="btn btn-primary btn-sm" onClick={() => app.openPostModal()}>
                 <Icon name="telegram" size={14} /> + Publish Post
               </button>
@@ -446,6 +618,10 @@ export default function Explore() {
         />
 
         <DateRibbon />
+
+        {showRoomsTimeline && (
+          <BoshlikRoomsTimeline selectedDate={filters.date ?? isoOffset(0)} />
+        )}
 
         {/* Part 1: Boshlik Venue Zone Filter Ribbon */}
         <div className="zone-ribbon" role="group" aria-label="Boshlik Campus Venue Zones">
@@ -462,31 +638,46 @@ export default function Explore() {
         </div>
 
         <div className="filter-bar">
-          <div className="track-switch" role="tablist" aria-label="Event track">
-            <button
-              className={filters.track === 'all' ? 'is-active' : ''}
-              onClick={() => app.setFilters({ track: 'all' })}
-              role="tab"
-              aria-selected={filters.track === 'all'}
-            >
-              All Campus Activity <b className="count">{trackCounts.all}</b>
-            </button>
-            <button
-              className={filters.track === 'official' ? 'is-active' : ''}
-              onClick={() => app.setFilters({ track: 'official' })}
-              role="tab"
-              aria-selected={filters.track === 'official'}
-            >
-              🏛️ Official University & Club Events <b className="count">{trackCounts.official}</b>
-            </button>
-            <button
-              className={filters.track === 'peer' ? 'is-active' : ''}
-              onClick={() => app.setFilters({ track: 'peer' })}
-              role="tab"
-              aria-selected={filters.track === 'peer'}
-            >
-              ⚡ Student Peer Meetups <b className="count">{trackCounts.peer}</b>
-            </button>
+          <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
+            <div className="track-switch" role="tablist" aria-label="Event track">
+              <button
+                className={filters.track === 'all' ? 'is-active' : ''}
+                onClick={() => app.setFilters({ track: 'all' })}
+                role="tab"
+                aria-selected={filters.track === 'all'}
+              >
+                All Campus Activity <b className="count">{trackCounts.all}</b>
+              </button>
+              <button
+                className={filters.track === 'official' ? 'is-active' : ''}
+                onClick={() => app.setFilters({ track: 'official' })}
+                role="tab"
+                aria-selected={filters.track === 'official'}
+              >
+                🏛️ Official University & Club Events <b className="count">{trackCounts.official}</b>
+              </button>
+              <button
+                className={filters.track === 'peer' ? 'is-active' : ''}
+                onClick={() => app.setFilters({ track: 'peer' })}
+                role="tab"
+                aria-selected={filters.track === 'peer'}
+              >
+                ⚡ Student Peer Meetups <b className="count">{trackCounts.peer}</b>
+              </button>
+            </div>
+
+            <div className="feed-actions">
+              {SORT_OPTIONS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`pill ${sortMode === s.id ? 'is-active' : ''}`}
+                  onClick={() => app.setFilters({ sort: s.id })}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="filter-row">
@@ -501,6 +692,17 @@ export default function Explore() {
                   {c.label}
                 </button>
               ))}
+              {(['all', 'EN', 'UZ', 'RU'] as const).map((lang) => (
+                <button
+                  key={lang}
+                  type="button"
+                  className={`pill ${filters.language === lang ? 'is-active' : ''}`}
+                  onClick={() => app.setFilters({ language: lang as Lang | 'all' })}
+                  title="Filter by Event Language"
+                >
+                  🌐 {lang === 'all' ? 'All Langs' : lang}
+                </button>
+              ))}
             </div>
 
             <div className="search-wrap">
@@ -508,7 +710,7 @@ export default function Explore() {
               <input
                 value={filters.search}
                 onChange={(e) => app.setFilters({ search: e.target.value })}
-                placeholder="Search Boshlik events, posts, rooms, hosts…"
+                placeholder={t(app.uiLang, 'searchPlaceholder')}
                 aria-label="Search events and posts"
               />
               {filters.search && (
@@ -519,12 +721,19 @@ export default function Explore() {
             </div>
           </div>
 
-          {filters.date && (
+          {(filters.date || activeClub) && (
             <div className="active-filter-row">
-              <span className="mono subtle">FILTERED BY DATE</span>
-              <button className="date-chip" onClick={() => app.setFilters({ date: null })}>
-                {longDate(filters.date)} <Icon name="close" size={12} />
-              </button>
+              <span className="mono subtle">ACTIVE FILTERS</span>
+              {filters.date && (
+                <button className="date-chip" onClick={() => app.setFilters({ date: null })}>
+                  {longDate(filters.date)} <Icon name="close" size={12} />
+                </button>
+              )}
+              {activeClub && (
+                <button className="date-chip" onClick={() => app.setFilters({ clubId: null })}>
+                  Club: {activeClub.name} <Icon name="close" size={12} />
+                </button>
+              )}
             </div>
           )}
         </div>

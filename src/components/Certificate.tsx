@@ -7,13 +7,24 @@ import { longDate, minutesFromTime } from '../lib/utils';
 
 export default function CertificateModal() {
   const app = useApp();
-  const ticket = app.state.tickets.find((t) => t.ticketId === app.certificateTicketId);
-  const event = ticket ? app.state.events.find((e) => e.id === ticket.eventId) : undefined;
-  if (!ticket || !event) return null;
+  const id = app.certificateTicketId;
+  if (!id) return null;
+
+  const ticket =
+    app.state.tickets.find((t) => t.ticketId === id) ??
+    app.state.tickets.find((t) => t.eventId === id && t.userId === app.persona.id && t.status !== 'cancelled');
+  const event = ticket
+    ? app.state.events.find((e) => e.id === ticket.eventId)
+    : app.state.events.find((e) => e.id === id);
+
+  if (!event) return null;
 
   const room = ROOMS.find((r) => r.id === event.roomId);
   const hours = ((minutesFromTime(event.endTime) - minutesFromTime(event.startTime)) / 60).toFixed(1);
-  const verification = `https://udea.uz/verify/${ticket.qrHash}`;
+  const serialHash =
+    ticket?.qrHash ??
+    `UDEA-ROLE-${event.id.replace('evt_', '').toUpperCase()}-${app.persona.id.replace('usr_', 'U').toUpperCase()}`;
+  const verification = `https://udea.uz/verify/${serialHash}`;
   const recognizedRole = getCertificateRoleTitle(app.persona, event, app.state.clubs);
 
   return (
@@ -88,7 +99,7 @@ export default function CertificateModal() {
                 <TicketQR value={verification} size={72} />
                 <div>
                   <span className="mono">VERIFY THIS CERTIFICATE</span>
-                  <span className="cert-serial mono">SERIAL {ticket.qrHash}</span>
+                  <span className="cert-serial mono">SERIAL {serialHash}</span>
                   <span className="cert-serial mono">ISSUED {longDate(new Date().toISOString().slice(0, 10))}</span>
                 </div>
               </div>
@@ -100,7 +111,7 @@ export default function CertificateModal() {
             </div>
 
             <div className="cert-footnote mono">
-              UDEA PULSE · CO-CURRICULAR DIPLOMA SUPPLEMENT · VERIFY AT UDEA.UZ/VERIFY · REF {ticket.qrHash}
+              UDEA PULSE · CO-CURRICULAR DIPLOMA SUPPLEMENT · VERIFY AT UDEA.UZ/VERIFY · REF {serialHash}
             </div>
           </div>
         </div>

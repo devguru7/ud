@@ -1,0 +1,355 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Hardened Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'maxsudasattarova0@gmail.com'
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 2. Entity Validation Helpers
+    function isValidEvent(data) {
+      return data.keys().hasAll([
+          'id', 'title', 'category', 'eventType', 'approvalStatus',
+          'campus', 'roomId', 'date', 'startTime', 'endTime',
+          'language', 'hostName', 'ownerUid', 'capacity',
+          'registeredCount', 'waitlistCount', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'title', 'subtitle', 'description', 'category',
+          'eventType', 'approvalStatus', 'campus', 'roomId', 'date',
+          'startTime', 'endTime', 'language', 'hostClubId', 'hostName',
+          'createdBy', 'ownerUid', 'capacity', 'registeredCount',
+          'waitlistCount', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        (!('subtitle' in data) || (data.subtitle is string && data.subtitle.size() <= 300)) &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 4000)) &&
+        data.category is string && data.category.size() <= 32 &&
+        data.category in ['fintech', 'tech', 'academic', 'sports', 'culture'] &&
+        data.eventType is string && data.eventType.size() <= 32 &&
+        data.eventType in ['official', 'peer_meetup'] &&
+        data.approvalStatus is string && data.approvalStatus.size() <= 32 &&
+        data.approvalStatus in ['approved', 'pending_room_approval', 'pending', 'rejected', 'cancelled'] &&
+        data.campus is string && data.campus.size() <= 32 &&
+        data.campus in ['Boshlik', 'Online'] &&
+        data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 64 &&
+        data.date is string && data.date.size() >= 8 && data.date.size() <= 16 &&
+        data.startTime is string && data.startTime.size() >= 4 && data.startTime.size() <= 8 &&
+        data.endTime is string && data.endTime.size() >= 4 && data.endTime.size() <= 8 &&
+        data.language is string && data.language.size() <= 8 &&
+        data.language in ['EN', 'UZ', 'RU'] &&
+        (!('hostClubId' in data) || (data.hostClubId is string && data.hostClubId.size() <= 64)) &&
+        data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 120 &&
+        (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128)) &&
+        data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+        data.capacity is int && data.capacity >= 2 && data.capacity <= 2000 &&
+        data.registeredCount is int && data.registeredCount >= 0 && data.registeredCount <= 2000 &&
+        data.waitlistCount is int && data.waitlistCount >= 0 && data.waitlistCount <= 2000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPost(data) {
+      return data.keys().hasAll([
+          'id', 'type', 'title', 'body', 'authorId',
+          'authorUid', 'authorName', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'type', 'title', 'body', 'authorId', 'authorUid',
+          'authorName', 'authorRoleTitle', 'clubId', 'linkedEventId',
+          'pinned', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.type is string && data.type.size() <= 32 &&
+        data.type in ['announcement', 'event_promo', 'event_recap', 'discussion'] &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.body is string && data.body.size() >= 1 && data.body.size() <= 4000 &&
+        data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128 &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 120 &&
+        (!('authorRoleTitle' in data) || (data.authorRoleTitle is string && data.authorRoleTitle.size() <= 120)) &&
+        (!('clubId' in data) || (data.clubId is string && data.clubId.size() <= 64)) &&
+        (!('linkedEventId' in data) || (data.linkedEventId is string && data.linkedEventId.size() <= 64)) &&
+        (!('pinned' in data) || (data.pinned is bool)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidClub(data) {
+      return data.keys().hasAll([
+          'id', 'name', 'short', 'category', 'description',
+          'members', 'verified', 'color', 'ownerUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'name', 'short', 'category', 'description',
+          'members', 'verified', 'color', 'ownerUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 160 &&
+        data.short is string && data.short.size() >= 1 && data.short.size() <= 32 &&
+        data.category is string && data.category.size() <= 32 &&
+        data.category in ['fintech', 'tech', 'academic', 'sports', 'culture'] &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 2000 &&
+        data.members is int && data.members >= 1 && data.members <= 10000 &&
+        data.verified is bool &&
+        data.color is string && data.color.size() >= 1 && data.color.size() <= 32 &&
+        data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTicket(data) {
+      return data.keys().hasAll([
+          'ticketId', 'eventId', 'userId', 'ownerUid',
+          'status', 'qrHash', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ticketId', 'eventId', 'userId', 'ownerUid',
+          'status', 'qrHash', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ticketId) &&
+        isValidId(data.eventId) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+        data.status is string && data.status.size() <= 32 &&
+        data.status in ['confirmed', 'waitlisted', 'checked_in', 'cancelled', 'external_saved'] &&
+        data.qrHash is string && data.qrHash.size() >= 1 && data.qrHash.size() <= 200 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWorkspace(data) {
+      return data.keys().hasAll([
+          'ownerUid', 'personaId', 'theme', 'uiLang',
+          'payloadJson', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerUid', 'personaId', 'theme', 'uiLang',
+          'payloadJson', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerUid) &&
+        data.personaId is string && data.personaId.size() >= 1 && data.personaId.size() <= 64 &&
+        data.theme is string && data.theme.size() <= 16 && data.theme in ['light', 'dark'] &&
+        data.uiLang is string && data.uiLang.size() <= 8 && data.uiLang in ['EN', 'UZ', 'RU'] &&
+        data.payloadJson is string && data.payloadJson.size() >= 2 && data.payloadJson.size() <= 900000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // 3. Collection Rules
+    match /admins/{adminUid} {
+      allow get: if isVerifiedUser() && isValidId(adminUid) && request.auth.uid == adminUid;
+      allow list, create, update, delete: if false;
+    }
+
+    match /events/{eventId} {
+      allow get: if isValidId(eventId) && (
+        existing().approvalStatus == 'approved' ||
+        (isSignedIn() && existing().ownerUid == request.auth.uid) ||
+        isAdmin()
+      );
+      allow list: if existing().approvalStatus == 'approved' ||
+        (isSignedIn() && existing().ownerUid == request.auth.uid);
+
+      allow create: if isVerifiedUser() &&
+        isValidId(eventId) &&
+        isValidEvent(incoming()) &&
+        incoming().id == eventId &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(eventId) &&
+        isValidEvent(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().ownerUid == request.auth.uid &&
+            !(existing().approvalStatus in ['cancelled', 'rejected']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'subtitle', 'description', 'roomId', 'date',
+              'startTime', 'endTime', 'language', 'capacity',
+              'registeredCount', 'waitlistCount', 'approvalStatus', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(eventId) && (
+        existing().ownerUid == request.auth.uid || isAdmin()
+      );
+    }
+
+    match /posts/{postId} {
+      allow get: if isValidId(postId) && existing().id == postId;
+      allow list: if existing().id is string && existing().id.size() <= 128;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(postId) &&
+        isValidPost(incoming()) &&
+        incoming().id == postId &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(postId) &&
+        isValidPost(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().authorUid == existing().authorUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().authorUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'body', 'pinned', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(postId) && (
+        existing().authorUid == request.auth.uid || isAdmin()
+      );
+    }
+
+    match /clubs/{clubId} {
+      allow get: if isValidId(clubId) && existing().id == clubId;
+      allow list: if existing().verified == true || (isSignedIn() && existing().ownerUid == request.auth.uid);
+
+      allow create: if isVerifiedUser() &&
+        isValidId(clubId) &&
+        isValidClub(incoming()) &&
+        incoming().id == clubId &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+
+      allow update: if isVerifiedUser() &&
+        isValidId(clubId) &&
+        isValidClub(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().ownerUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'description', 'members', 'color', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(clubId) && isAdmin();
+    }
+
+    match /tickets/{ticketId} {
+      allow get: if isVerifiedUser() && isValidId(ticketId) && (
+        existing().ownerUid == request.auth.uid || isAdmin()
+      );
+      allow list: if isVerifiedUser() && existing().ownerUid == request.auth.uid;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(ticketId) &&
+        isValidTicket(incoming()) &&
+        incoming().ticketId == ticketId &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/events/$(incoming().eventId));
+
+      allow update: if isVerifiedUser() &&
+        isValidId(ticketId) &&
+        isValidTicket(incoming()) &&
+        incoming().ticketId == existing().ticketId &&
+        incoming().eventId == existing().eventId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().ownerUid == request.auth.uid &&
+            existing().status != 'cancelled' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(ticketId) && (
+        existing().ownerUid == request.auth.uid || isAdmin()
+      );
+    }
+
+    match /workspaces/{userId} {
+      allow get: if isVerifiedUser() && isValidId(userId) && (
+        request.auth.uid == userId || isAdmin()
+      );
+      allow list: if isVerifiedUser() && existing().ownerUid == request.auth.uid;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidWorkspace(incoming()) &&
+        incoming().ownerUid == userId &&
+        request.auth.uid == userId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidWorkspace(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            request.auth.uid == userId &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'personaId', 'theme', 'uiLang', 'payloadJson', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && (
+        request.auth.uid == userId || isAdmin()
+      );
+    }
+  }
+}
