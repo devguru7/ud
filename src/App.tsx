@@ -38,22 +38,32 @@ function MobileNav() {
   ];
   return (
     <nav className="mobile-nav" aria-label="Mini app navigation">
-      {items.map((item) => (
-        <button
-          key={item.id}
-          className={app.view === item.id ? 'is-active' : ''}
-          onClick={() => {
-            app.setView(item.id);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-        >
-          <span className="mobile-nav-icon">
-            <Icon name={TAB_ICONS[item.id]} size={19} />
-            {Boolean(item.badge) && <b>{item.badge}</b>}
-          </span>
-          {item.label}
-        </button>
-      ))}
+      {items.map((item) => {
+        const active = app.view === item.id;
+        return (
+          <button
+            key={item.id}
+            className={active ? 'is-active' : ''}
+            onClick={() => {
+              app.setView(item.id);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          >
+            {active && (
+              <motion.span
+                layoutId="mobile-nav-pill"
+                className="liquid-pill-bg"
+                transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+              />
+            )}
+            <span className="mobile-nav-icon">
+              <Icon name={TAB_ICONS[item.id]} size={19} />
+              {Boolean(item.badge) && <b>{item.badge}</b>}
+            </span>
+            {item.label}
+          </button>
+        );
+      })}
     </nav>
   );
 }
@@ -115,7 +125,8 @@ function Shell() {
             </motion.div>
           </AnimatePresence>
         </main>
-        {app.mobile ? <MobileNav /> : <Footer />}
+        {!app.mobile && <Footer />}
+        <MobileNav />
       </div>
 
       <EventDrawer />

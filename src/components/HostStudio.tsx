@@ -440,8 +440,9 @@ export default function HostStudio() {
         action={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {!editingEvent && (
-              <button className="btn btn-violet btn-sm" onClick={fillDemoDraft}>
-                <Icon name="spark" size={14} /> Auto-Fill Demo Event
+              <button className="btn btn-ghost btn-sm ai-copilot-btn" onClick={fillDemoDraft}>
+                <span className="ai-orb" aria-hidden="true" />
+                <span className="ai-shimmer-text">Auto-Fill Demo Event</span>
               </button>
             )}
             {editingEvent && (

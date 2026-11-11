@@ -215,7 +215,6 @@ export function Poster({
       <div className="poster-top">
         <span className="glass-pill mono-pill">{dayLabel(event.date)} • {event.startTime}</span>
         <span className="poster-top-right">
-          {event.campus === 'Online' && <span className="glass-pill mono-pill">ONLINE</span>}
           <span className="glass-pill mono-pill lang-pill">{event.language}</span>
         </span>
       </div>

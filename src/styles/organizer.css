@@ -935,18 +935,18 @@
   padding-top: 4px;
 }
 .phone-frame .topbar-inner {
-  padding: 8px 12px;
-  gap: 8px;
+  padding: 8px 10px;
+  gap: 6px;
   flex-wrap: nowrap;
   justify-content: space-between;
 }
 .phone-frame .brand-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
 }
 .phone-frame .brand {
-  gap: 7px;
+  gap: 6px;
 }
 .phone-frame .brand-text {
   display: flex;
@@ -955,7 +955,12 @@
   font-size: 13.5px;
 }
 .phone-frame .brand-text em {
-  font-size: 7px;
+  display: none;
+}
+.phone-frame .mobile-topbar-utils .icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
 }
 .phone-frame .compliance,
 .phone-frame .live-pill {
@@ -964,7 +969,10 @@
 .phone-frame .page {
   padding: 12px 12px 18px;
 }
-.phone-frame .hero-side {
+.phone-frame .bento-hero,
+.phone-frame .hero-side,
+.phone-frame .posts-grid,
+.phone-frame .floor-map-grid {
   grid-template-columns: minmax(0, 1fr);
 }
 .phone-frame .spotlight {
@@ -1184,7 +1192,22 @@
   backdrop-filter: blur(20px);
   border-top: 1px solid var(--border-hairline);
 }
+.desktop-frame > .mobile-nav {
+  display: none;
+}
+@media (max-width: 760px) {
+  .desktop-frame > .mobile-nav {
+    display: grid;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 150;
+  }
+}
 .mobile-nav button {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;

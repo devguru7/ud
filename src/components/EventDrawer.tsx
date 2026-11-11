@@ -165,20 +165,30 @@ function DrawerBody({ event }: { event: EventItem }) {
         </div>
 
         <div className="drawer-tabs" role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              className={`drawer-tab ${tab === t.id ? 'is-active' : ''}`}
-              onClick={() => setTab(t.id)}
-              role="tab"
-              aria-selected={tab === t.id}
-            >
-              <Icon name={t.icon} size={14} />
-              {t.label}
-              {t.id === 'qa' && event.questions.length > 0 && <b className="tab-count">{event.questions.length}</b>}
-              {t.id === 'people' && <b className="tab-count">{event.attendees.filter((a) => a.lookingForTeam).length}</b>}
-            </button>
-          ))}
+          {TABS.map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                className={`drawer-tab ${active ? 'is-active' : ''}`}
+                onClick={() => setTab(t.id)}
+                role="tab"
+                aria-selected={active}
+              >
+                <Icon name={t.icon} size={14} />
+                {t.label}
+                {t.id === 'qa' && event.questions.length > 0 && <b className="tab-count">{event.questions.length}</b>}
+                {t.id === 'people' && <b className="tab-count">{event.attendees.filter((a) => a.lookingForTeam).length}</b>}
+                {active && (
+                  <motion.span
+                    layoutId="drawer-tab-underline"
+                    className="drawer-tab-underline"
+                    transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="drawer-scroll">

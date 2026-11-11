@@ -463,6 +463,35 @@ function BoshlikRoomsTimeline({ selectedDate }: { selectedDate: string }) {
           <div className="timeline-rows">
             {physicalRooms.map((room) => {
               const roomEvs = dayEvents.filter((e) => e.roomId === room.id);
+              const sorted = [...roomEvs].sort(
+                (a, b) => minutesFromTime(a.startTime) - minutesFromTime(b.startTime),
+              );
+              const fmtMin = (m: number) =>
+                `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+              const freeGaps: { start: number; end: number; startStr: string; endStr: string }[] = [];
+              let cursorMin = dayStart;
+              for (const ev of sorted) {
+                const s = Math.max(dayStart, minutesFromTime(ev.startTime));
+                const e = Math.min(dayEnd, minutesFromTime(ev.endTime));
+                if (s - cursorMin >= 60) {
+                  freeGaps.push({
+                    start: cursorMin,
+                    end: s,
+                    startStr: fmtMin(cursorMin),
+                    endStr: fmtMin(s),
+                  });
+                }
+                cursorMin = Math.max(cursorMin, e);
+              }
+              if (dayEnd - cursorMin >= 60) {
+                freeGaps.push({
+                  start: cursorMin,
+                  end: dayEnd,
+                  startStr: fmtMin(cursorMin),
+                  endStr: fmtMin(dayEnd),
+                });
+              }
+
               return (
                 <div key={room.id} className="timeline-room-row">
                   <div className="timeline-room-info">
@@ -477,28 +506,42 @@ function BoshlikRoomsTimeline({ selectedDate }: { selectedDate: string }) {
                       style={{ left: `${nowLeftPct}%` }}
                       title="Live Boshlik Campus Time Marker"
                     />
-                    <div className="timeline-slot-grid">
-                      {hourlySlots.map((hr) => {
-                        const slotStr = `${String(hr).padStart(2, '0')}:00`;
-                        return (
-                          <button
-                            key={hr}
-                            type="button"
-                            className="timeline-hour-slot"
-                            onClick={() =>
-                              app.openStudioWithPreset({
-                                roomId: room.id,
-                                date: selectedDate,
-                                startTime: slotStr,
-                              })
-                            }
-                            title={`Book ${room.code} at ${slotStr} on ${dayLabel(selectedDate)}`}
-                          >
-                            <span>+ {slotStr}</span>
-                          </button>
-                        );
-                      })}
+                    <div className="timeline-slot-grid" aria-hidden="true">
+                      {hourlySlots.map((hr) => (
+                        <span key={hr} className="timeline-hour-slot" />
+                      ))}
                     </div>
+                    {freeGaps.map((gap) => {
+                      const gapLeft = ((gap.start - dayStart) / totalMins) * 100 + 0.4;
+                      const gapWidth = Math.max(
+                        8,
+                        ((gap.end - gap.start) / totalMins) * 100 - 0.8,
+                      );
+                      const defaultStart =
+                        gap.start <= 14 * 60 && gap.end >= 15 * 60 ? '14:00' : gap.startStr;
+                      return (
+                        <button
+                          key={`${room.id}-gap-${gap.start}`}
+                          type="button"
+                          className="timeline-gap-btn"
+                          style={{ left: `${gapLeft}%`, width: `${gapWidth}%` }}
+                          onClick={() =>
+                            app.openStudioWithPreset({
+                              roomId: room.id,
+                              date: selectedDate,
+                              startTime: defaultStart,
+                            })
+                          }
+                          title={`Book ${room.code} (${gap.startStr}–${gap.endStr}) on ${dayLabel(selectedDate)}`}
+                        >
+                          <span>
+                            {roomEvs.length === 0
+                              ? `+ Free ${gap.startStr}–${gap.endStr} · Click to book ${room.code}`
+                              : `+ Free ${gap.startStr}–${gap.endStr}`}
+                          </span>
+                        </button>
+                      );
+                    })}
                     {roomEvs.map((ev) => {
                       const s = Math.max(dayStart, minutesFromTime(ev.startTime));
                       const e = Math.min(dayEnd, minutesFromTime(ev.endTime));

@@ -410,7 +410,7 @@ export default function Topbar() {
                 <span className="notif-dot">{app.unreadNotificationsCount}</span>
               )}
             </button>
-            {notifOpen && app.mobile && (
+            {notifOpen && (
               <div className="persona-menu notif-popover" style={{ right: -60, width: 300 }}>
                 <div className="persona-menu-head">
                   <div className="row-between">
@@ -471,7 +471,7 @@ export default function Topbar() {
           <button className="avatar-btn" onClick={() => setPersonaOpen((v) => !v)} aria-label="Switch persona">
             <Avatar name={app.persona.name} color={app.persona.color} size={28} />
           </button>
-          {personaOpen && app.mobile && (
+          {personaOpen && (
             <div className="persona-menu" style={{ right: 0, width: 300 }}>
               <div className="persona-menu-head">
                 <div className="row-between">

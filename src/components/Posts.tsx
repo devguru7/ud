@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import type { AttachmentItem, CampusPost, PostType } from '../types';
 import { ROOMS } from '../lib/seed';
 import { useApp, TG_BOT } from '../lib/store';
 import { copyText, dayLabel, eventSeatsLeft, isFull, relativeTime } from '../lib/utils';
 import { getPrimaryRoleBadgeForUser, getUserPermissionsForClub } from '../lib/logic';
+import { springs } from '../lib/motionConfig';
 import { Avatar, CategoryBadge, Icon, Mono, OdometerNumber } from './UI';
 
 const POST_TYPE_META: Record<PostType, { label: string; shortLabel: string; icon: string; badgeClass: string }> = {
@@ -211,27 +213,33 @@ export function PostCard({ post, compact = false }: { post: CampusPost; compact?
           <div className="post-poll">
             <div className="post-poll-head">
               <Mono>LIVE CAMPUS POLL • TAP TO VOTE</Mono>
-              <Mono>{totalVotes} VOTES</Mono>
+              <Mono><OdometerNumber value={totalVotes} /> VOTES</Mono>
             </div>
             <div className="post-poll-options">
               {post.pollOptions.map((opt) => {
                 const percent = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
                 return (
-                  <button
+                  <motion.button
                     key={opt.id}
                     type="button"
+                    whileTap={{ scale: 0.985 }}
                     className={`poll-option ${opt.votedByMe ? 'is-voted' : ''}`}
                     onClick={() => app.votePostPoll(post.id, opt.id)}
                   >
-                    <span className="poll-bar" style={{ width: `${percent}%` }} />
+                    <motion.span
+                      className="poll-bar"
+                      initial={false}
+                      animate={{ width: `${percent}%` }}
+                      transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+                    />
                     <span className="poll-option-label">
                       {opt.votedByMe && <Icon name="check" size={13} />}
                       {opt.text}
                     </span>
                     <Mono className="poll-option-pct">
-                      {percent}% ({opt.votes})
+                      {percent}% (<OdometerNumber value={opt.votes} />)
                     </Mono>
-                  </button>
+                  </motion.button>
                 );
               })}
             </div>
@@ -610,8 +618,9 @@ export function PostModal() {
             <h2>{existing ? 'Edit Campus Post' : 'Publish Campus Post / Recap'}</h2>
           </div>
           <div className="feed-actions">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={autoWriteTemplate}>
-              <Icon name="spark" size={14} /> Auto-Write Draft
+            <button type="button" className="btn btn-ghost btn-sm ai-copilot-btn" onClick={autoWriteTemplate}>
+              <span className="ai-orb" aria-hidden="true" />
+              <span className="ai-shimmer-text">Auto-Write Draft</span>
             </button>
             <button type="button" className="icon-btn sm" onClick={app.closePostModal} aria-label="Close modal">
               <Icon name="close" size={16} />
@@ -624,16 +633,26 @@ export function PostModal() {
             <div className="field">
               <span className="field-label">Post Format</span>
               <div className="track-switch">
-                {(['announcement', 'event_promo', 'event_recap', 'discussion'] as PostType[]).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    className={type === t ? 'is-active' : ''}
-                    onClick={() => setType(t)}
-                  >
-                    {POST_TYPE_META[t].shortLabel}
-                  </button>
-                ))}
+                {(['announcement', 'event_promo', 'event_recap', 'discussion'] as PostType[]).map((t) => {
+                  const active = type === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      className={active ? 'is-active' : ''}
+                      onClick={() => setType(t)}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="post-format-pill"
+                          className="liquid-pill-bg"
+                          transition={springs.liquidPill}
+                        />
+                      )}
+                      {POST_TYPE_META[t].shortLabel}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

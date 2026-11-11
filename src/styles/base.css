@@ -98,8 +98,9 @@ body {
 h1, h2, h3, h4 {
   font-family: var(--font-display);
   margin: 0;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  letter-spacing: -0.015em;
+  word-spacing: normal;
+  line-height: 1.22;
 }
 
 p {
@@ -112,6 +113,8 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+  letter-spacing: normal;
+  word-spacing: normal;
 }
 
 button {
@@ -1175,4 +1178,51 @@ select {
     opacity: 0;
   }
 }
+
+/* AI Co-Pilot Breathing Orb & Shimmer Text */
+.ai-copilot-btn {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(139, 92, 246, 0.38) !important;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(16, 185, 129, 0.08)) !important;
+}
+.ai-orb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #38c6ff, #6e5bff 55%, #10b981);
+  box-shadow: 0 0 10px rgba(110, 91, 255, 0.8), 0 0 16px rgba(56, 198, 255, 0.5);
+  animation: aiOrbPulse 2.2s ease-in-out infinite;
+  flex: none;
+}
+@keyframes aiOrbPulse {
+  0%, 100% {
+    transform: scale(0.92);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.22);
+    opacity: 1;
+  }
+}
+.ai-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--text-primary) 0%,
+    #8b5cf6 40%,
+    #10b981 60%,
+    var(--text-primary) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmerSweep 3.2s linear infinite;
+  font-weight: 700;
+}
+@keyframes shimmerSweep {
+  to {
+    background-position: 200% center;
+  }
+}
+
 
