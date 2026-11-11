@@ -1,8 +1,35 @@
 import React from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Category, EventItem, Lang, Person } from '../types';
 import { CATEGORY_SHORT, capacityState, dayLabel, eventSeatsLeft, initials, pct } from '../lib/utils';
+import { springs } from '../lib/motionConfig';
 import { useApp } from '../lib/store';
+
+export function OdometerNumber({
+  value,
+  className = '',
+}: {
+  value: string | number;
+  className?: string;
+}) {
+  return (
+    <span className={`odometer-num ${className}`}>
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={String(value)}
+          initial={{ y: '75%', opacity: 0 }}
+          animate={{ y: '0%', opacity: 1 }}
+          exit={{ y: '-75%', opacity: 0 }}
+          transition={springs.snappy}
+          style={{ display: 'inline-block' }}
+        >
+          {value}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
 
 const ICONS: Record<string, React.ReactNode> = {
   compass: <><circle cx="12" cy="12" r="9" /><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z" /></>,
@@ -134,7 +161,7 @@ export function CapacityBar({ event, compact = false }: { event: EventItem; comp
     <div className={`capacity ${compact ? 'capacity-compact' : ''}`}>
       <div className="capacity-head">
         <Mono>
-          {event.registeredCount} / {event.capacity} SEATS
+          <OdometerNumber value={event.registeredCount} /> / {event.capacity} SEATS
         </Mono>
         <span className={`capacity-note cap-${state}`}>
           {state === 'full'
@@ -188,7 +215,7 @@ export function Poster({
       <div className="poster-top">
         <span className="glass-pill mono-pill">{dayLabel(event.date)} • {event.startTime}</span>
         <span className="poster-top-right">
-          <span className="glass-pill mono-pill">{event.campus === 'Online' ? 'ONLINE' : event.campus.toUpperCase()}</span>
+          {event.campus === 'Online' && <span className="glass-pill mono-pill">ONLINE</span>}
           <span className="glass-pill mono-pill lang-pill">{event.language}</span>
         </span>
       </div>

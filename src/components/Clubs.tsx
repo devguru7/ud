@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import type { Category, CustomClubRole, PermissionFlag } from '../types';
-import { useApp } from '../lib/store';
+import { useApp, TG_BOT } from '../lib/store';
 import { ROOMS } from '../lib/seed';
 import { Avatar, CategoryBadge, Icon, Mono, SectionHeader } from './UI';
-import { CATEGORY_SHORT, dayLabel, isoDate } from '../lib/utils';
+import { CATEGORY_SHORT, copyText, dayLabel, isoDate } from '../lib/utils';
 import { PERMISSION_META } from '../lib/labels';
 import { getUserPermissionsForClub } from '../lib/logic';
 
@@ -22,6 +22,17 @@ export default function Clubs() {
   const [newClubDesc, setNewClubDesc] = useState('');
   const [newClubPartner, setNewClubPartner] = useState('Coventry University');
   const [newClubColor, setNewClubColor] = useState('#8B5CF6');
+
+  const copyRoleInviteLink = async (clubId: string, clubName: string) => {
+    const link = `${TG_BOT}?startapp=role_invite_${clubId}`;
+    const ok = await copyText(link);
+    app.pushToast({
+      tone: ok ? 'success' : 'info',
+      telegram: true,
+      title: `Role Invite Link Copied — ${clubName}`,
+      message: `${link} · Share with students on Telegram to open the role application & delegation modal directly.`,
+    });
+  };
 
   const nextEventFor = (clubId: string) =>
     approved
@@ -283,6 +294,13 @@ export default function Clubs() {
                 </button>
                 <button
                   className="btn btn-ghost btn-sm"
+                  onClick={() => copyRoleInviteLink(club.id, club.short)}
+                  title="Copy shareable Telegram Mini App Role Invite Link"
+                >
+                  <Icon name="copy" size={13} /> Invite Link
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
                   onClick={() => {
                     app.setFilters({ clubId: club.id });
                     app.setView('explore');
@@ -480,9 +498,27 @@ export function RoleManagerModal() {
             <span className="mono subtle">PART 2 · DYNAMIC ROLE BUILDER & DELEGATION ENGINE</span>
             <h2>{club.name} — Custom Roles & Student Team</h2>
           </div>
-          <button type="button" className="icon-btn sm" onClick={app.closeRoleModal} aria-label="Close modal">
-            <Icon name="close" size={16} />
-          </button>
+          <div className="feed-actions">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={async () => {
+                const link = `${TG_BOT}?startapp=role_invite_${club.id}`;
+                const ok = await copyText(link);
+                app.pushToast({
+                  tone: ok ? 'success' : 'info',
+                  telegram: true,
+                  title: `Copied Role Invite Link (${club.short})`,
+                  message: `${link} · Students opening this link jump straight to this role & team modal.`,
+                });
+              }}
+            >
+              <Icon name="copy" size={14} /> Copy Role Invite Link
+            </button>
+            <button type="button" className="icon-btn sm" onClick={app.closeRoleModal} aria-label="Close modal">
+              <Icon name="close" size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="track-switch" style={{ marginBottom: 12 }}>

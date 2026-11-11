@@ -4,13 +4,33 @@ import { ROOMS } from '../lib/seed';
 import { useApp, TG_BOT } from '../lib/store';
 import { copyText, dayLabel, eventSeatsLeft, isFull, relativeTime } from '../lib/utils';
 import { getPrimaryRoleBadgeForUser, getUserPermissionsForClub } from '../lib/logic';
-import { Avatar, CategoryBadge, Icon, Mono } from './UI';
+import { Avatar, CategoryBadge, Icon, Mono, OdometerNumber } from './UI';
 
-const POST_TYPE_META: Record<PostType, { label: string; icon: string; badgeClass: string }> = {
-  announcement: { label: 'Official Announcement', icon: 'bell', badgeClass: 'post-badge-announcement' },
-  event_promo: { label: 'Event Promo', icon: 'spark', badgeClass: 'post-badge-promo' },
-  event_recap: { label: 'Event Recap & Highlights', icon: 'flag', badgeClass: 'post-badge-recap' },
-  discussion: { label: 'Campus Poll & Discussion', icon: 'users', badgeClass: 'post-badge-discussion' },
+const POST_TYPE_META: Record<PostType, { label: string; shortLabel: string; icon: string; badgeClass: string }> = {
+  announcement: {
+    label: 'Official Announcement',
+    shortLabel: '📢 Announcement',
+    icon: 'bell',
+    badgeClass: 'post-badge-announcement',
+  },
+  event_promo: {
+    label: 'Event Promo',
+    shortLabel: '🚀 Event Promo',
+    icon: 'spark',
+    badgeClass: 'post-badge-promo',
+  },
+  event_recap: {
+    label: 'Event Recap & Highlights',
+    shortLabel: '🏆 Event Recap',
+    icon: 'flag',
+    badgeClass: 'post-badge-recap',
+  },
+  discussion: {
+    label: 'Campus Poll & Discussion',
+    shortLabel: '📊 Campus Poll',
+    icon: 'users',
+    badgeClass: 'post-badge-discussion',
+  },
 };
 
 const COVER_BG: Record<string, string> = {
@@ -32,6 +52,8 @@ export function PostCard({ post, compact = false }: { post: CampusPost; compact?
   const linkedRoom = linkedEvent ? ROOMS.find((r) => r.id === linkedEvent.roomId) : undefined;
   const ticket = linkedEvent ? app.myTicket(linkedEvent.id) : undefined;
   const typeMeta = POST_TYPE_META[post.type] ?? POST_TYPE_META.announcement;
+  const badgeStr = (post.badgeText ?? typeMeta.label.toUpperCase()).trim();
+  const hasLeadingEmoji = /^[^\w\s]/u.test(badgeStr);
 
   const clubPerms = club ? getUserPermissionsForClub(app.persona, club) : [];
   const canModify =
@@ -65,7 +87,7 @@ export function PostCard({ post, compact = false }: { post: CampusPost; compact?
           <div className="post-badges">
             {post.pinned && <span className="glass-pill mono-pill">📌 PINNED</span>}
             <span className={`glass-pill mono-pill ${typeMeta.badgeClass}`}>
-              <Icon name={typeMeta.icon} size={12} /> {post.badgeText ?? typeMeta.label.toUpperCase()}
+              {!hasLeadingEmoji && <Icon name={typeMeta.icon} size={12} />} {badgeStr}
             </span>
             {club && <span className="glass-pill mono-pill">{club.short} · BOSHLIK</span>}
             {post.telegramSynced && <span className="glass-pill mono-pill">TG SYNCED</span>}
@@ -274,21 +296,21 @@ export function PostCard({ post, compact = false }: { post: CampusPost; compact?
               className={`reaction-pill ${post.reactions.myReactions.includes('fire') ? 'is-active' : ''}`}
               onClick={() => app.togglePostReaction(post.id, 'fire')}
             >
-              🔥 <Mono>{post.reactions.fire}</Mono>
+              🔥 <Mono><OdometerNumber value={post.reactions.fire} /></Mono>
             </button>
             <button
               type="button"
               className={`reaction-pill ${post.reactions.myReactions.includes('heart') ? 'is-active' : ''}`}
               onClick={() => app.togglePostReaction(post.id, 'heart')}
             >
-              ❤️ <Mono>{post.reactions.heart}</Mono>
+              ❤️ <Mono><OdometerNumber value={post.reactions.heart} /></Mono>
             </button>
             <button
               type="button"
               className={`reaction-pill ${post.reactions.myReactions.includes('rocket') ? 'is-active' : ''}`}
               onClick={() => app.togglePostReaction(post.id, 'rocket')}
             >
-              🚀 <Mono>{post.reactions.rocket}</Mono>
+              🚀 <Mono><OdometerNumber value={post.reactions.rocket} /></Mono>
             </button>
           </div>
 
@@ -589,7 +611,7 @@ export function PostModal() {
           </div>
           <div className="feed-actions">
             <button type="button" className="btn btn-ghost btn-sm" onClick={autoWriteTemplate}>
-              <Icon name="spark" size={14} /> ✨ Auto-Write Draft
+              <Icon name="spark" size={14} /> Auto-Write Draft
             </button>
             <button type="button" className="icon-btn sm" onClick={app.closePostModal} aria-label="Close modal">
               <Icon name="close" size={16} />
@@ -609,7 +631,7 @@ export function PostModal() {
                     className={type === t ? 'is-active' : ''}
                     onClick={() => setType(t)}
                   >
-                    {POST_TYPE_META[t].label}
+                    {POST_TYPE_META[t].shortLabel}
                   </button>
                 ))}
               </div>

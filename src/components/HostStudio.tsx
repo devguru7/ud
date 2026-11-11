@@ -18,6 +18,7 @@ import {
   CATEGORY_LABEL,
   copyText,
   dayLabel,
+  downloadEventPosterPNG,
   isoOffset,
   minutesFromTime,
   pct,
@@ -1326,20 +1327,38 @@ export default function HostStudio() {
                   : `${conflicts.length} overlapping booking(s) found (${hasConfirmedConflict ? 'Confirmed' : 'Pending Hold'}).`}
               </span>
             </div>
-            <button
-              type="button"
-              className="preview-copy"
-              onClick={async () => {
-                const ok = await copyText(telegramText);
-                app.pushToast({
-                  tone: ok ? 'success' : 'error',
-                  title: ok ? 'Telegram post copied' : 'Copy blocked',
-                  message: ok ? 'Paste it straight into @udeauz_events.' : 'Clipboard access was denied by the browser.',
-                });
-              }}
-            >
-              <Icon name="copy" size={13} /> Copy Telegram post text
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="preview-copy"
+                style={{ flex: 1 }}
+                onClick={async () => {
+                  const ok = await copyText(telegramText);
+                  app.pushToast({
+                    tone: ok ? 'success' : 'error',
+                    title: ok ? 'Telegram post copied' : 'Copy blocked',
+                    message: ok ? 'Paste it straight into @udeauz_events.' : 'Clipboard access was denied by the browser.',
+                  });
+                }}
+              >
+                <Icon name="copy" size={13} /> Copy Telegram post text
+              </button>
+              <button
+                type="button"
+                className="preview-copy"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  downloadEventPosterPNG(previewEvent, selectedRoom);
+                  app.pushToast({
+                    tone: 'success',
+                    title: 'Poster PNG downloaded (1200×630)',
+                    message: 'High-resolution social & Telegram banner saved.',
+                  });
+                }}
+              >
+                <Icon name="image" size={13} /> Download Poster PNG
+              </button>
+            </div>
           </div>
         </aside>
       </div>

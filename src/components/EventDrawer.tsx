@@ -9,6 +9,7 @@ import { STAFF_ROLE_LABEL } from '../lib/labels';
 import {
   copyText,
   dayLabel,
+  downloadEventPosterPNG,
   eventSeatsLeft,
   firstName,
   pct,
@@ -126,6 +127,20 @@ function DrawerBody({ event }: { event: EventItem }) {
                 <Icon name="telegram" size={14} /> + {event.past ? 'Recap' : 'Promo'} Post
               </button>
             )}
+            <button
+              className="tool-btn"
+              onClick={() => {
+                downloadEventPosterPNG(event, room);
+                app.pushToast({
+                  tone: 'success',
+                  title: 'Poster PNG downloaded (1200×630)',
+                  message: `High-resolution Boshlik poster saved for ${event.title}.`,
+                });
+              }}
+              title="Download 1200×630 PNG Event Poster for Telegram & Instagram"
+            >
+              <Icon name="image" size={15} /> Poster PNG
+            </button>
             <button className="tool-btn" onClick={copyLink} title="Copy Telegram Mini App link">
               <Icon name="telegram" size={15} /> Copy TG link
             </button>

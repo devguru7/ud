@@ -274,3 +274,146 @@ export function programmeKey(programme: string): string {
   if (/Management/i.test(programme)) return 'Business Management';
   return 'FinTech MSc';
 }
+
+export function downloadEventPosterPNG(ev: EventItem, room?: Room): void {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const palettes: Record<Category, [string, string, string]> = {
+    fintech: ['#059669', '#064e3b', '#022c22'],
+    tech: ['#7c3aed', '#3b0764', '#1e1b4b'],
+    academic: ['#2563eb', '#1e3a8a', '#0f172a'],
+    sports: ['#65a30d', '#365314', '#14532d'],
+    culture: ['#ea580c', '#7c2d12', '#431407'],
+  };
+  const [c1, c2, c3] = palettes[ev.category] ?? palettes.fintech;
+
+  const grad = ctx.createRadialGradient(220, 200, 80, 540, 675, 980);
+  grad.addColorStop(0, c1);
+  grad.addColorStop(0.55, c2);
+  grad.addColorStop(1, c3);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1080, 1350);
+
+  // Subtle architectural grid
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= 1080; x += 54) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 1350);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= 1350; y += 54) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(1080, y);
+    ctx.stroke();
+  }
+
+  // Watermark
+  ctx.save();
+  ctx.font = '800 130px "Plus Jakarta Sans", sans-serif';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.10)';
+  ctx.fillText(CATEGORY_SHORT[ev.category].toUpperCase(), 72, 310);
+  ctx.restore();
+
+  // Top Header Pill
+  ctx.fillStyle = 'rgba(12, 14, 22, 0.55)';
+  ctx.fillRect(72, 72, 936, 76);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)';
+  ctx.strokeRect(72, 72, 936, 76);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 24px "JetBrains Mono", monospace';
+  ctx.fillText(`UDEA PULSE · BOSHLIK CAMPUS · ${ev.language}`, 100, 118);
+
+  // Kicker
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.78)';
+  ctx.font = '700 24px "JetBrains Mono", monospace';
+  ctx.fillText(
+    `${CATEGORY_LABEL[ev.category]} · ${ev.hostName}`.toUpperCase(),
+    72,
+    470,
+  );
+
+  // Wrapped Title
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 68px "Plus Jakarta Sans", sans-serif';
+  const words = ev.title.split(' ');
+  let line = '';
+  let y = 560;
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > 920) {
+      ctx.fillText(line, 72, y);
+      line = word;
+      y += 80;
+    } else {
+      line = test;
+    }
+  }
+  if (line) {
+    ctx.fillText(line, 72, y);
+    y += 90;
+  }
+
+  // Subtitle
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.84)';
+  ctx.font = '500 30px "Inter", sans-serif';
+  const subWords = ev.subtitle.split(' ');
+  let subLine = '';
+  for (const w of subWords) {
+    const test = subLine ? `${subLine} ${w}` : w;
+    if (ctx.measureText(test).width > 900) {
+      ctx.fillText(subLine, 72, y);
+      subLine = w;
+      y += 44;
+    } else {
+      subLine = test;
+    }
+  }
+  if (subLine) ctx.fillText(subLine, 72, y);
+
+  // Bottom Metadata Card
+  ctx.fillStyle = 'rgba(9, 11, 17, 0.78)';
+  ctx.fillRect(72, 1020, 936, 250);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+  ctx.strokeRect(72, 1020, 936, 250);
+
+  ctx.fillStyle = '#34d399';
+  ctx.font = '700 24px "JetBrains Mono", monospace';
+  ctx.fillText(`DATE & TIME: ${longDate(ev.date).toUpperCase()} · ${ev.startTime}–${ev.endTime}`, 108, 1082);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 32px "Plus Jakarta Sans", sans-serif';
+  ctx.fillText(
+    room ? `${room.name} (${room.code} · ${room.floor})` : ev.campus === 'Online' ? 'Telegram Live Stream' : 'Boshlik Campus, Tashkent',
+    108,
+    1140,
+  );
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+  ctx.font = '600 22px "JetBrains Mono", monospace';
+  ctx.fillText(
+    `RSVP ON TELEGRAM: @udea_pulse_bot?startapp=event_${ev.id} · CAP ${ev.capacity}`,
+    108,
+    1205,
+  );
+
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${ev.id}-boshlik-poster.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }, 'image/png');
+}
+

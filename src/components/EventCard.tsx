@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { motion } from 'motion/react';
 import type { EventItem } from '../types';
 import { useApp } from '../lib/store';
 import { Avatar, CapacityBar, CategoryBadge, Icon, Mono, Poster } from './UI';
 import { ROOMS } from '../lib/seed';
-import { CATEGORY_LABEL, capacityState, dayLabel, firstName } from '../lib/utils';
+import { capacityState, dayLabel, firstName } from '../lib/utils';
 import { canManage } from '../lib/logic';
+import { cardEntranceVariant } from '../lib/motionConfig';
 
 export default function EventCard({ event }: { event: EventItem }) {
   const app = useApp();
+  const [burstKey, setBurstKey] = useState(0);
   const ticket = app.myTicket(event.id);
   const saved = app.isEventSaved(event.id);
   const manage = canManage(event, app.persona, app.state.clubs);
@@ -64,7 +67,8 @@ export default function EventCard({ event }: { event: EventItem }) {
   const state = capacityState(event);
 
   return (
-    <article
+    <motion.article
+      variants={cardEntranceVariant}
       className={`event-card cat-${event.category} ${state === 'full' ? 'is-full' : ''}`}
       onClick={() => app.openEvent(event.id)}
       role="button"
@@ -78,18 +82,21 @@ export default function EventCard({ event }: { event: EventItem }) {
     >
       <div className="event-cover">
         <Poster event={event} />
-        <button
+        <motion.button
           type="button"
+          whileTap={{ scale: 0.82 }}
           className={`bookmark-btn ${saved ? 'is-saved' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
+            setBurstKey((k) => k + 1);
             app.toggleSaveEvent(event.id);
           }}
           aria-label={saved ? 'Remove from saved events' : 'Save event'}
           title={saved ? 'Saved to bookmarks' : 'Save event'}
         >
           <Icon name="bookmark" size={14} />
-        </button>
+          {burstKey > 0 && <span key={burstKey} className="particle-burst-ring" aria-hidden="true" />}
+        </motion.button>
         <span className="cover-room-pill mono">
           {event.campus === 'Online' ? 'ONLINE' : `BOSHLIK • ${room?.code ?? 'TBA'}`}
         </span>
@@ -112,11 +119,6 @@ export default function EventCard({ event }: { event: EventItem }) {
               {event.createdByRoleTitle}
             </span>
           )}
-          <span className="host-sep" />
-          <span className={`host-cat cat-${event.category}`}>
-            <i className="dot" />
-            {CATEGORY_LABEL[event.category]}
-          </span>
         </div>
 
         <h3 className="event-title">{event.title}</h3>
@@ -186,6 +188,6 @@ export default function EventCard({ event }: { event: EventItem }) {
           </button>
         </div>
       </div>
-    </article>
+    </motion.article>
   );
 }

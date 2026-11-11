@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useApp } from '../lib/store';
+import { motion } from 'motion/react';
+import { useApp, TG_BOT } from '../lib/store';
 import { ROOMS } from '../lib/seed';
 import {
   canManage,
@@ -8,9 +9,10 @@ import {
   hasEventPermission,
 } from '../lib/logic';
 import { PERMISSION_META, STAFF_ROLE_DEFAULT_PERMS, STAFF_ROLE_LABEL } from '../lib/labels';
-import { Avatar, CategoryBadge, EmptyState, Icon, Mono, SectionHeader } from './UI';
+import { Avatar, CategoryBadge, EmptyState, Icon, Mono, OdometerNumber, SectionHeader } from './UI';
 import {
   buildCSV,
+  copyText,
   dayLabel,
   downloadFile,
   isoDate,
@@ -21,6 +23,8 @@ import {
 import type { EventItem, EventStaffRole, PermissionFlag, Person } from '../types';
 
 type GuestTab = 'all' | 'checked' | 'not' | 'waitlist' | 'screening';
+
+const PROG_COLORS = ['#10B981', '#2563EB', '#8B5CF6', '#F59E0B', '#EC4899'];
 
 export default function Organizer() {
   const app = useApp();
@@ -43,6 +47,7 @@ export default function Organizer() {
   const [scanning, setScanning] = useState(false);
   const [cameraMode, setCameraMode] = useState(false);
   const [manualCode, setManualCode] = useState('');
+  const [verifyError, setVerifyError] = useState(false);
   const [lastScan, setLastScan] = useState<{ name: string; programme: string; hash: string } | null>(null);
   const [broadcastText, setBroadcastText] = useState('');
 
@@ -59,6 +64,7 @@ export default function Organizer() {
     setTab('all');
     setSearch('');
     setManualCode('');
+    setVerifyError(false);
   }, [current?.id]);
 
   const attendees: Person[] = current?.attendees ?? [];
@@ -73,6 +79,24 @@ export default function Organizer() {
       )
     : 0;
   const turnout = current ? pct(checkedIn.length, Math.max(current.registeredCount, 1)) : 0;
+
+  const programmeBreakdown = useMemo(() => {
+    const counts: Record<string, number> = {};
+    attendees.forEach((a) => {
+      const key = a.programmeShort || 'UDEA Student';
+      counts[key] = (counts[key] ?? 0) + 1;
+    });
+    const total = Math.max(1, attendees.length);
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count], idx) => ({
+        name,
+        count,
+        pct: Math.round((count / total) * 100),
+        color: PROG_COLORS[idx % PROG_COLORS.length],
+      }));
+  }, [attendees]);
 
   const canScan = current
     ? hasEventPermission(app.persona, current, app.state.clubs, 'scan_tickets') ||
@@ -146,12 +170,16 @@ export default function Organizer() {
     if (!current || !manualCode.trim()) return;
     const res = app.verifyTicketCode(current.id, manualCode);
     if (res.ok) {
+      setVerifyError(false);
       setLastScan({
         name: res.message,
         programme: 'Verified Pass',
         hash: manualCode.trim().toUpperCase(),
       });
       setManualCode('');
+    } else {
+      setVerifyError(true);
+      window.setTimeout(() => setVerifyError(false), 650);
     }
   };
 
@@ -311,27 +339,27 @@ export default function Organizer() {
           <div className="metrics-row">
             <div className="metric-tile">
               <Mono>REGISTERED</Mono>
-              <strong>{current!.registeredCount}</strong>
+              <strong><OdometerNumber value={current!.registeredCount} /></strong>
               <span>of {current!.capacity} seats</span>
             </div>
             <div className="metric-tile">
               <Mono>4H CONFIRMED</Mono>
-              <strong>{confirmed4h}</strong>
+              <strong><OdometerNumber value={confirmed4h} /></strong>
               <span>Telegram bot checks</span>
             </div>
             <div className="metric-tile">
               <Mono>CHECKED IN</Mono>
-              <strong>{checkedIn.length}</strong>
+              <strong><OdometerNumber value={checkedIn.length} /></strong>
               <span>live at the door</span>
             </div>
             <div className="metric-tile">
               <Mono>WAITLIST</Mono>
-              <strong>{current!.waitlistCount}</strong>
+              <strong><OdometerNumber value={current!.waitlistCount} /></strong>
               <span>in queue</span>
             </div>
             <div className="metric-tile highlight">
               <Mono>TURNOUT</Mono>
-              <strong>{turnout}%</strong>
+              <strong><OdometerNumber value={`${turnout}%`} /></strong>
               <span className="capacity-track tiny">
                 <span className="capacity-fill cap-open" style={{ width: `${turnout}%` }} />
               </span>
@@ -382,8 +410,14 @@ export default function Organizer() {
                 <span className="mono subtle">{pending.length} NOT YET SCANNED</span>
               </div>
 
-              <form onSubmit={handleManualVerify} style={{ display: 'flex', gap: 8 }}>
+              <motion.form
+                onSubmit={handleManualVerify}
+                animate={verifyError ? { x: [0, -10, 10, -7, 7, -4, 4, 0] } : { x: 0 }}
+                transition={{ duration: 0.42 }}
+                style={{ display: 'flex', gap: 8 }}
+              >
                 <input
+                  className={verifyError ? 'input-error-glow' : ''}
                   value={manualCode}
                   onChange={(e) => setManualCode(e.target.value)}
                   disabled={!canScan}
@@ -392,7 +426,7 @@ export default function Organizer() {
                 <button type="submit" className="btn btn-ghost btn-sm" disabled={!canScan || !manualCode.trim()}>
                   Verify & Check In
                 </button>
-              </form>
+              </motion.form>
 
               {lastScan && (
                 <div className="scan-result">
@@ -464,7 +498,24 @@ export default function Organizer() {
           <section className="card guest-card" style={{ marginBottom: 16 }}>
             <div className="panel-head">
               <h2><Icon name="users" size={17} /> Connected Event Team & Volunteers ({current!.teamMembers?.length ?? 0})</h2>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={async () => {
+                    const clubId = current!.hostClubId || 'club_fintech';
+                    const link = `${TG_BOT}?startapp=role_invite_${clubId}`;
+                    const ok = await copyText(link);
+                    app.pushToast({
+                      tone: ok ? 'success' : 'info',
+                      telegram: true,
+                      title: 'Copied Team & Role Invite Link',
+                      message: `${link} · Share with student volunteers to connect them to this event.`,
+                    });
+                  }}
+                >
+                  <Icon name="copy" size={12} /> Copy Team Invite
+                </button>
                 {canEditEvent && (
                   <button
                     type="button"
@@ -619,8 +670,46 @@ export default function Organizer() {
           <section className="card guest-card">
             <div className="panel-head">
               <h2><Icon name="users" size={17} /> Guest list & manual check-in</h2>
-              <Mono>{rows.length} OF {current!.registeredCount} REGISTERED</Mono>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {canScan && pending.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-teal btn-xs"
+                    onClick={() => app.checkInAllPending(current!.id)}
+                  >
+                    <Icon name="check" size={12} /> + Check In All Pending ({pending.length})
+                  </button>
+                )}
+                <Mono>{rows.length} OF {current!.registeredCount} REGISTERED</Mono>
+              </div>
             </div>
+
+            {programmeBreakdown.length > 0 && (
+              <div className="prog-breakdown">
+                <div className="row-between">
+                  <Mono className="subtle">FACULTY & PROGRAMME BREAKDOWN (BOSHLIK COHORTS)</Mono>
+                  <Mono className="subtle">{attendees.length} STUDENTS</Mono>
+                </div>
+                <div className="prog-bar-stack">
+                  {programmeBreakdown.map((item) => (
+                    <span
+                      key={item.name}
+                      style={{ width: `${Math.max(item.pct, 4)}%`, background: item.color }}
+                      title={`${item.name}: ${item.count} (${item.pct}%)`}
+                    />
+                  ))}
+                </div>
+                <div className="prog-legend">
+                  {programmeBreakdown.map((item) => (
+                    <span key={item.name}>
+                      <i style={{ background: item.color }} />
+                      <strong>{item.name}</strong> · {item.pct}% ({item.count})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="table-controls">
               <div className="search-wrap compact">
                 <Icon name="search" size={15} />

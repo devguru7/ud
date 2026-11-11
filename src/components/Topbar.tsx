@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { useApp } from '../lib/store';
 import { Avatar, Icon, Mono } from './UI';
-import { BOSHLIK_ZONES, personaRoleLabel, personaSubtitle, t } from '../lib/labels';
+import { personaRoleLabel, personaSubtitle, t } from '../lib/labels';
 import { firstName, relativeTime } from '../lib/utils';
 import { getUserCanPublishPosts } from '../lib/logic';
+import { springs } from '../lib/motionConfig';
 import type { Lang } from '../types';
 
 const UI_LANGS: Lang[] = ['EN', 'UZ', 'RU'];
@@ -109,21 +111,31 @@ export default function Topbar() {
         </button>
 
         <nav className="topbar-tabs" aria-label="Primary">
-          {nav.map((item) => (
-            <button
-              key={item.id}
-              className={`nav-tab ${app.view === item.id ? 'is-active' : ''}`}
-              onClick={() => go(item.id)}
-              aria-current={app.view === item.id ? 'page' : undefined}
-              aria-label={item.label}
-              title={item.label}
-            >
-              <Icon name={item.icon} size={15} />
-              <span className="nav-label-full">{item.label}</span>
-              <span className="nav-label-short">{item.short}</span>
-              {item.badge > 0 && <b className="nav-badge">{item.badge}</b>}
-            </button>
-          ))}
+          {nav.map((item) => {
+            const active = app.view === item.id;
+            return (
+              <button
+                key={item.id}
+                className={`nav-tab ${active ? 'is-active' : ''}`}
+                onClick={() => go(item.id)}
+                aria-current={active ? 'page' : undefined}
+                aria-label={item.label}
+                title={item.label}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="topbar-nav-pill"
+                    className="liquid-pill-bg"
+                    transition={springs.liquidPill}
+                  />
+                )}
+                <Icon name={item.icon} size={15} />
+                <span className="nav-label-full">{item.label}</span>
+                <span className="nav-label-short">{item.short}</span>
+                {item.badge > 0 && <b className="nav-badge">{item.badge}</b>}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="topbar-utils">
@@ -135,21 +147,6 @@ export default function Topbar() {
             <Icon name="phone" size={14} />
             <span>{app.mobile ? 'Desktop' : 'TG Mini App'}</span>
           </button>
-
-          <label className="quick-select zone-select" title="Boshlik Campus Venue Zone filter">
-            <Icon name="pin" size={14} />
-            <select
-              value={app.state.filters.zone}
-              onChange={(e) => app.setFilters({ zone: e.target.value as never })}
-              aria-label="Boshlik Campus Venue Zone filter"
-            >
-              {BOSHLIK_ZONES.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.short}
-                </option>
-              ))}
-            </select>
-          </label>
 
           <label className="quick-select lang-select" title="Interface Language (EN / UZ / RU)">
             <Icon name="globe" size={14} />

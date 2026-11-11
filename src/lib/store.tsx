@@ -325,6 +325,7 @@ interface AppContextValue {
   approveEvent: (eventId: string) => void;
   rejectEvent: (eventId: string, suggestedRoomId?: string, note?: string) => void;
   checkInPerson: (eventId: string, personId: string) => void;
+  checkInAllPending: (eventId: string) => void;
   undoCheckIn: (eventId: string, personId: string) => void;
   verifyTicketCode: (eventId: string, code: string) => Result;
   promoteWaitlistEntry: (eventId: string, waitlistId: string) => void;
@@ -490,6 +491,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (targetEventId) {
         setOrganizerEventId(targetEventId);
         setView('organizer');
+      }
+    } else if (startParam.startsWith('role_invite_')) {
+      const targetClubId = startParam.slice('role_invite_'.length);
+      if (targetClubId) {
+        setView('clubs');
+        setRoleModalClubId(targetClubId);
       }
     }
   }, []);
@@ -1487,6 +1494,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const checkInAllPending = (eventId: string) => {
+    const event = state.events.find((e) => e.id === eventId);
+    if (!event) return;
+    const pendingAttendees = event.attendees.filter((a) => !event.checkIns[a.id]);
+    if (pendingAttendees.length === 0) {
+      pushToast({
+        tone: 'info',
+        title: 'All attendees already checked in',
+        message: 'Every confirmed guest on the roster has already arrived.',
+      });
+      return;
+    }
+    const timestamp = new Date().toISOString();
+    const nextCheckIns: Record<string, string> = { ...event.checkIns };
+    const checkedUserIds = new Set<string>();
+    pendingAttendees.forEach((a) => {
+      nextCheckIns[a.id] = timestamp;
+      if (a.id.startsWith('att_')) checkedUserIds.add(a.id.slice(4));
+    });
+
+    setState((prev) => ({
+      ...prev,
+      events: prev.events.map((e) => (e.id === eventId ? { ...e, checkIns: nextCheckIns } : e)),
+      tickets: prev.tickets.map((t) =>
+        t.eventId === eventId && checkedUserIds.has(t.userId) && t.status !== 'cancelled'
+          ? { ...t, status: 'checked_in', checkedInAt: timestamp }
+          : t,
+      ),
+    }));
+
+    pushToast({
+      tone: 'success',
+      telegram: true,
+      title: `Batch checked in ${pendingAttendees.length} attendees`,
+      message: `All ${event.attendees.length} confirmed guests for “${event.title}” are now marked Present (+50 XP each).`,
+    });
+  };
+
   const verifyTicketCode = (eventId: string, code: string): Result => {
     const clean = code.trim().toUpperCase();
     if (!clean) return { ok: false, message: 'Enter a QR hash, student ID or @telegram handle.' };
@@ -2413,6 +2458,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     approveEvent,
     rejectEvent,
     checkInPerson,
+    checkInAllPending,
     undoCheckIn,
     verifyTicketCode,
     promoteWaitlistEntry,

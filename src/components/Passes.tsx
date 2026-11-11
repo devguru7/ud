@@ -1,14 +1,14 @@
 import React from 'react';
 import { useApp } from '../lib/store';
 import type { EventItem, Ticket } from '../types';
-import { Avatar, Icon, Mono, SectionHeader, TicketQR, EmptyState } from './UI';
+import { Avatar, Icon, Mono, OdometerNumber, SectionHeader, TicketQR, EmptyState } from './UI';
 import { ROOMS } from '../lib/seed';
 import {
   getAllRoleBadgesForUser,
   getCertificateRoleTitle,
   getUserRoleTitleForClub,
 } from '../lib/logic';
-import { dayLabel, longDate, minutesFromTime, isoDate } from '../lib/utils';
+import { dayLabel, downloadEventPosterPNG, longDate, minutesFromTime, isoDate } from '../lib/utils';
 
 const BASE_BADGES: Record<string, string[]> = {
   usr_1: ['FinTech Case Coordinator', 'Practice Session Lead', 'QR Door Verifier'],
@@ -57,6 +57,41 @@ export default function Passes() {
     new Set([...dynamicClubBadges, ...eventStaffBadges, ...(BASE_BADGES[persona.id] ?? ['Campus Explorer'])]),
   );
 
+  // Build Boshlik Campus XP & Coordinator Leaderboard across all accounts
+  const leaderboard = app.personas
+    .map((p) => {
+      const pTickets = app.state.tickets.filter(
+        (t) => t.userId === p.id && t.status !== 'cancelled',
+      ).length;
+      const pOrganized = app.state.events.filter((e) => {
+        if (e.approvalStatus !== 'approved') return false;
+        if (e.createdBy === p.id) return true;
+        if (e.teamMembers?.some((m) => m.userId === p.id)) return true;
+        return Boolean(getUserRoleTitleForClub(p, e.hostClubId ?? null, app.state.clubs));
+      }).length;
+      const clubRoles = getAllRoleBadgesForUser(p, app.state.clubs).map((b) => b.title);
+      const staffRoles = app.state.events
+        .flatMap((e) => e.teamMembers ?? [])
+        .filter((m) => m.userId === p.id)
+        .map((m) => m.customLabel);
+      const roleBadges = Array.from(
+        new Set([
+          ...(p.role === 'admin' ? ['Campus Admin'] : []),
+          ...(p.role === 'club_lead' ? ['Club President'] : []),
+          ...clubRoles,
+          ...staffRoles,
+        ]),
+      ).slice(0, 3);
+      return {
+        persona: p,
+        totalXp: p.xp + pTickets * 15 + pOrganized * 35,
+        organizedCount: pOrganized,
+        ticketsCount: pTickets,
+        roleBadges,
+      };
+    })
+    .sort((a, b) => b.totalXp - a.totalXp);
+
   return (
     <div className="passes-view">
       <SectionHeader
@@ -71,7 +106,7 @@ export default function Passes() {
       />
 
       <div className="passport-grid">
-        <div className="passport-card">
+        <div className="passport-card border-beam">
           <div className="passport-top">
             <Avatar name={persona.name} color={persona.color} size={64} />
             <div className="passport-id">
@@ -91,7 +126,7 @@ export default function Passes() {
               </div>
             </div>
             <div className="passport-score">
-              <span className="score-value">{persona.reliabilityScore}%</span>
+              <span className="score-value"><OdometerNumber value={`${persona.reliabilityScore}%`} /></span>
               <span className="mono">RELIABILITY</span>
               <em>{persona.reliabilityScore >= 95 ? 'Trusted Attendee' : 'Building trust'}</em>
             </div>
@@ -100,17 +135,17 @@ export default function Passes() {
           <div className="passport-stats">
             <div className="pstat">
               <span className="mono">CAMPUS XP</span>
-              <strong>{xp}</strong>
+              <strong><OdometerNumber value={xp} /></strong>
               <em>+15 RSVP · +35 Host</em>
             </div>
             <div className="pstat">
               <span className="mono">EVENTS ATTENDED</span>
-              <strong>{attended}</strong>
+              <strong><OdometerNumber value={attended} /></strong>
               <em>verified check-ins</em>
             </div>
             <div className="pstat">
               <span className="mono">ORGANIZED / STAFF</span>
-              <strong>{organizedEvents.length}</strong>
+              <strong><OdometerNumber value={organizedEvents.length} /></strong>
               <em>leadership record</em>
             </div>
           </div>
@@ -248,6 +283,65 @@ export default function Passes() {
           </div>
         </div>
       )}
+
+      {/* Part 3 Feature 3: Boshlik Campus XP & Coordinator Leaderboard */}
+      <div className="leaderboard-section">
+        <div className="pass-section-head">
+          <h2>🏆 Boshlik Campus XP & Coordinator Leaderboard</h2>
+          <Mono>TOP CO-CURRICULAR LEADERS · TASHKENT</Mono>
+        </div>
+        <div className="leaderboard-card">
+          {leaderboard.map((row, idx) => {
+            const rank = idx + 1;
+            const isMe = row.persona.id === persona.id;
+            return (
+              <div
+                key={row.persona.id}
+                className={`leaderboard-row ${isMe ? 'is-me' : ''}`}
+              >
+                <span className={`rank-pill ${rank <= 3 ? `rank-${rank}` : ''}`}>
+                  #{rank}
+                </span>
+                <Avatar name={row.persona.name} color={row.persona.color} size={36} />
+                <div className="leader-main">
+                  <strong>
+                    {row.persona.name} {isMe ? '(You)' : ''}
+                  </strong>
+                  <span className="mono">
+                    {row.persona.programmeShort ?? row.persona.department} · {row.persona.telegram}
+                  </span>
+                </div>
+                <div className="leader-roles">
+                  {row.roleBadges.length > 0 ? (
+                    row.roleBadges.map((b) => (
+                      <span key={b} className="badge badge-sm badge-teal">
+                        {b}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="badge badge-sm badge-muted">Campus Explorer</span>
+                  )}
+                </div>
+                <div className="leader-metrics">
+                  <strong>{row.totalXp} XP</strong>
+                  <span className="mono">
+                    {row.persona.reliabilityScore}% RELIABILITY · {row.organizedCount} HOSTED
+                  </span>
+                </div>
+                {!isMe && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => app.setPersona(row.persona.id)}
+                  >
+                    ⚡ Switch
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -260,8 +354,20 @@ function PassCard({ event, ticket }: { event: EventItem; ticket: Ticket }) {
   const confirmed = ticket.confirmedAttendance4h;
   const roleTitle = getCertificateRoleTitle(app.persona, event, app.state.clubs);
 
+  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    e.currentTarget.style.setProperty('--glare-x', `${x.toFixed(1)}%`);
+    e.currentTarget.style.setProperty('--glare-y', `${y.toFixed(1)}%`);
+  };
+
   return (
-    <article className={`pass cat-${event.category} ${ticket.status === 'waitlisted' ? 'is-waitlist' : ''}`}>
+    <article
+      className={`pass cat-${event.category} has-tilt ${ticket.status === 'waitlisted' ? 'is-waitlist' : ''}`}
+      onMouseMove={handleMouseMove}
+    >
+      <div className="tilt-glare" aria-hidden="true" />
       <div className="pass-main">
         <div className="pass-head">
           <div className="pass-host">
@@ -322,6 +428,19 @@ function PassCard({ event, ticket }: { event: EventItem; ticket: Ticket }) {
               Open partner portal <Icon name="external" size={13} />
             </a>
           )}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              downloadEventPosterPNG(event, room);
+              app.pushToast({
+                tone: 'success',
+                title: 'Poster PNG downloaded',
+                message: `Saved 1200×630 poster for ${event.title}.`,
+              });
+            }}
+          >
+            <Icon name="image" size={14} /> Poster PNG
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={() => app.openEvent(event.id)}>
             Event details
           </button>

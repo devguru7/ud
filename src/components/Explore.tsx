@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../lib/store';
 import EventCard from './EventCard';
 import { PostCard } from './Posts';
-import { Avatar, CategoryBadge, Icon, Mono, SectionHeader } from './UI';
+import { Avatar, CategoryBadge, Icon, Mono, OdometerNumber, SectionHeader } from './UI';
 import {
   CATEGORY_LABEL,
   MONTHS,
@@ -25,6 +25,7 @@ import {
 import type { Category, EventItem, EventSortMode, ExploreFeedMode, Lang } from '../types';
 import { ROOMS } from '../lib/seed';
 import { BOSHLIK_ZONES, t } from '../lib/labels';
+import { springs, staggerContainer } from '../lib/motionConfig';
 
 const CATEGORIES: { id: Category | 'all'; label: string }[] = [
   { id: 'all', label: 'All Categories' },
@@ -74,10 +75,23 @@ function Spotlight() {
     app.rsvp(event.id);
   };
 
+  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    e.currentTarget.style.setProperty('--glare-x', `${x.toFixed(1)}%`);
+    e.currentTarget.style.setProperty('--glare-y', `${y.toFixed(1)}%`);
+  };
+
   const isHackathon = event.id === 'evt_1';
 
   return (
-    <section className={`spotlight cat-${event.category}`} aria-label="Flagship spotlight">
+    <section
+      className={`spotlight cat-${event.category} border-beam has-tilt`}
+      aria-label="Flagship spotlight"
+      onMouseMove={handleMouseMove}
+    >
+      <div className="tilt-glare" aria-hidden="true" />
       <div className="spotlight-bg">
         <div className="blob blob-a" />
         <div className="blob blob-b" />
@@ -123,7 +137,9 @@ function Spotlight() {
 
         <div className="spotlight-capacity">
           <div className="spotlight-capacity-head">
-            <Mono>{event.registeredCount} / {event.capacity} REGISTERED</Mono>
+            <Mono>
+              <OdometerNumber value={event.registeredCount} /> / {event.capacity} REGISTERED
+            </Mono>
             <span className={`capacity-note ${full ? 'cap-full' : seatsLeft <= 2 ? 'cap-almost' : 'cap-open'}`}>
               {full ? 'Full • waitlist open' : `${seatsLeft} spot${seatsLeft === 1 ? '' : 's'} left!`}
             </span>
@@ -357,11 +373,20 @@ function DateRibbon() {
 
 function BoshlikRoomsTimeline({ selectedDate }: { selectedDate: string }) {
   const app = useApp();
+  const [viewMode, setViewMode] = useState<'timeline' | 'floormap'>('timeline');
   const physicalRooms = ROOMS.filter((r) => r.campus === 'Boshlik');
   const dayStart = 9 * 60; // 09:00
   const dayEnd = 21 * 60;  // 21:00
   const totalMins = dayEnd - dayStart;
   const hours = [9, 11, 13, 15, 17, 19, 21];
+  const hourlySlots = Array.from({ length: 12 }, (_, idx) => 9 + idx); // 09:00..20:00
+
+  const now = new Date();
+  const currentMins = now.getHours() * 60 + now.getMinutes();
+  const nowLeftPct =
+    currentMins >= dayStart && currentMins <= dayEnd
+      ? ((currentMins - dayStart) / totalMins) * 100
+      : 42; // Default 14:00 campus pulse marker when outside 09:00-21:00
 
   const dayEvents = app.state.events.filter(
     (e) =>
@@ -370,13 +395,29 @@ function BoshlikRoomsTimeline({ selectedDate }: { selectedDate: string }) {
   );
 
   return (
-    <div className="card rooms-timeline-card">
+    <div id="boshlik-rooms-timeline" className="card rooms-timeline-card">
       <div className="panel-head">
         <div>
-          <span className="mono subtle">BOSHLIK STREET 3 · LIVE ROOM OCCUPANCY & CONFLICT MATRIX</span>
-          <h3>🏫 Boshlik Campus Rooms Timeline — {longDate(selectedDate)}</h3>
+          <span className="mono subtle">BOSHLIK STREET 3 · LIVE ROOM OCCUPANCY & INTERACTIVE FLOOR MAP</span>
+          <h3>🏫 Boshlik Campus Venues — {longDate(selectedDate)}</h3>
         </div>
         <div className="feed-actions">
+          <div className="track-switch">
+            <button
+              type="button"
+              className={viewMode === 'timeline' ? 'is-active' : ''}
+              onClick={() => setViewMode('timeline')}
+            >
+              📊 Hourly Timeline Matrix
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'floormap' ? 'is-active' : ''}
+              onClick={() => setViewMode('floormap')}
+            >
+              🗺️ Interactive Boshlik Floor Map
+            </button>
+          </div>
           <button
             type="button"
             className="btn btn-ghost btn-xs"
@@ -406,33 +447,141 @@ function BoshlikRoomsTimeline({ selectedDate }: { selectedDate: string }) {
         </div>
       </div>
 
-      <div className="timeline-ruler">
-        <span className="timeline-room-col mono subtle">BOSHLIK VENUE</span>
-        <div className="timeline-track-head">
-          {hours.map((h) => (
-            <span key={h} className="mono subtle">
-              {String(h).padStart(2, '0')}:00
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="timeline-rows">
-        {physicalRooms.map((room) => {
-          const roomEvs = dayEvents.filter((e) => e.roomId === room.id);
-          return (
-            <div key={room.id} className="timeline-room-row">
-              <div className="timeline-room-info">
-                <strong>{room.code}</strong>
-                <span className="mono subtle">
-                  {room.floor} · Cap {room.capacity}
+      {viewMode === 'timeline' ? (
+        <>
+          <div className="timeline-ruler">
+            <span className="timeline-room-col mono subtle">BOSHLIK VENUE</span>
+            <div className="timeline-track-head">
+              {hours.map((h) => (
+                <span key={h} className="mono subtle">
+                  {String(h).padStart(2, '0')}:00
                 </span>
-              </div>
-              <div className="timeline-bar-track">
-                {roomEvs.length === 0 ? (
+              ))}
+            </div>
+          </div>
+
+          <div className="timeline-rows">
+            {physicalRooms.map((room) => {
+              const roomEvs = dayEvents.filter((e) => e.roomId === room.id);
+              return (
+                <div key={room.id} className="timeline-room-row">
+                  <div className="timeline-room-info">
+                    <strong>{room.code}</strong>
+                    <span className="mono subtle">
+                      {room.floor} · Cap {room.capacity}
+                    </span>
+                  </div>
+                  <div className="timeline-bar-track">
+                    <div
+                      className="timeline-now-laser"
+                      style={{ left: `${nowLeftPct}%` }}
+                      title="Live Boshlik Campus Time Marker"
+                    />
+                    <div className="timeline-slot-grid">
+                      {hourlySlots.map((hr) => {
+                        const slotStr = `${String(hr).padStart(2, '0')}:00`;
+                        return (
+                          <button
+                            key={hr}
+                            type="button"
+                            className="timeline-hour-slot"
+                            onClick={() =>
+                              app.openStudioWithPreset({
+                                roomId: room.id,
+                                date: selectedDate,
+                                startTime: slotStr,
+                              })
+                            }
+                            title={`Book ${room.code} at ${slotStr} on ${dayLabel(selectedDate)}`}
+                          >
+                            <span>+ {slotStr}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {roomEvs.map((ev) => {
+                      const s = Math.max(dayStart, minutesFromTime(ev.startTime));
+                      const e = Math.min(dayEnd, minutesFromTime(ev.endTime));
+                      const left = Math.max(0, Math.min(92, ((s - dayStart) / totalMins) * 100));
+                      const width = Math.max(12, Math.min(100 - left, ((e - s) / totalMins) * 100));
+                      const isPending = ev.approvalStatus === 'pending_room_approval';
+                      return (
+                        <button
+                          key={ev.id}
+                          type="button"
+                          className={`timeline-event-block cat-${ev.category} ${isPending ? 'is-pending' : ''}`}
+                          style={{ left: `${left}%`, width: `${width}%` }}
+                          onClick={() => app.openEvent(ev.id)}
+                          title={`${ev.title} (${ev.startTime}–${ev.endTime})`}
+                        >
+                          <strong>{ev.title}</strong>
+                          <span className="mono">
+                            {ev.startTime}–{ev.endTime} {isPending ? '• PENDING' : ''}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <div className="floor-map-grid">
+          {physicalRooms.map((room) => {
+            const roomEvs = dayEvents.filter((e) => e.roomId === room.id);
+            const isFree = roomEvs.length === 0;
+            return (
+              <div
+                key={room.id}
+                className={`floor-zone-card ${isFree ? 'is-free' : 'is-occupied'}`}
+              >
+                <div className="floor-zone-head">
+                  <div>
+                    <Mono>{room.floor.toUpperCase()} · {room.code}</Mono>
+                    <h4>{room.name}</h4>
+                  </div>
+                  <span className={`badge badge-sm ${isFree ? 'badge-success' : 'badge-warn'}`}>
+                    {isFree ? '✓ FREE ALL DAY' : `${roomEvs.length} SESSION${roomEvs.length === 1 ? '' : 'S'}`}
+                  </span>
+                </div>
+                <span className="mono subtle">
+                  Capacity {room.capacity} seats · {room.equipment.slice(0, 3).join(' · ')}
+                </span>
+                {roomEvs.length > 0 ? (
+                  <div className="stack-sm">
+                    {roomEvs.map((ev) => (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        className="roster-chip"
+                        style={{ justifyContent: 'space-between', width: '100%' }}
+                        onClick={() => app.openEvent(ev.id)}
+                      >
+                        <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {ev.title}
+                        </strong>
+                        <Mono>{ev.startTime}–{ev.endTime}</Mono>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="mono subtle" style={{ color: 'var(--brand-accent)' }}>
+                    Open for official events, workshops & peer study groups (09:00–21:00).
+                  </span>
+                )}
+                <div className="row-between" style={{ marginTop: 'auto', paddingTop: 4 }}>
                   <button
                     type="button"
-                    className="timeline-free-btn"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => app.setFilters({ zone: room.zone })}
+                  >
+                    Filter Zone
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-xs"
                     onClick={() =>
                       app.openStudioWithPreset({
                         roomId: room.id,
@@ -441,37 +590,14 @@ function BoshlikRoomsTimeline({ selectedDate }: { selectedDate: string }) {
                       })
                     }
                   >
-                    ✓ Available all day (09:00–21:00) — Click to book {room.code}
+                    <Icon name="plus" size={11} /> Book {room.code}
                   </button>
-                ) : (
-                  roomEvs.map((ev) => {
-                    const s = Math.max(dayStart, minutesFromTime(ev.startTime));
-                    const e = Math.min(dayEnd, minutesFromTime(ev.endTime));
-                    const left = Math.max(0, Math.min(92, ((s - dayStart) / totalMins) * 100));
-                    const width = Math.max(12, Math.min(100 - left, ((e - s) / totalMins) * 100));
-                    const isPending = ev.approvalStatus === 'pending_room_approval';
-                    return (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        className={`timeline-event-block cat-${ev.category} ${isPending ? 'is-pending' : ''}`}
-                        style={{ left: `${left}%`, width: `${width}%` }}
-                        onClick={() => app.openEvent(ev.id)}
-                        title={`${ev.title} (${ev.startTime}–${ev.endTime})`}
-                      >
-                        <strong>{ev.title}</strong>
-                        <span className="mono">
-                          {ev.startTime}–{ev.endTime} {isPending ? '• PENDING' : ''}
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -480,6 +606,19 @@ export default function Explore() {
   const app = useApp();
   const { filters } = app.state;
   const [showRoomsTimeline, setShowRoomsTimeline] = useState(false);
+  const timelineWrapRef = useRef<HTMLDivElement>(null);
+
+  const toggleTimeline = () => {
+    setShowRoomsTimeline((prev) => {
+      const next = !prev;
+      if (next) {
+        window.setTimeout(() => {
+          timelineWrapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 90);
+      }
+      return next;
+    });
+  };
 
   const approved = app.state.events.filter((e) => e.approvalStatus === 'approved' && !e.past);
   const sortMode: EventSortMode = filters.sort ?? 'soonest';
@@ -593,21 +732,31 @@ export default function Explore() {
                     { id: 'events', label: `🗓️ Events (${feed.length})` },
                     { id: 'posts', label: `📢 Posts & Recaps (${filteredPosts.length})` },
                   ] as { id: ExploreFeedMode; label: string }[]
-                ).map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    className={app.exploreMode === m.id ? 'is-active' : ''}
-                    onClick={() => app.setExploreMode(m.id)}
-                  >
-                    {m.label}
-                  </button>
-                ))}
+                ).map((m) => {
+                  const active = app.exploreMode === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={active ? 'is-active' : ''}
+                      onClick={() => app.setExploreMode(m.id)}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="explore-feed-mode-pill"
+                          className="liquid-pill-bg"
+                          transition={springs.liquidPill}
+                        />
+                      )}
+                      <span style={{ position: 'relative', zIndex: 2 }}>{m.label}</span>
+                    </button>
+                  );
+                })}
               </div>
               <button
                 type="button"
                 className={`btn ${showRoomsTimeline ? 'btn-violet' : 'btn-ghost'} btn-sm`}
-                onClick={() => setShowRoomsTimeline((v) => !v)}
+                onClick={toggleTimeline}
               >
                 <Icon name="map" size={14} /> {t(app.uiLang, 'roomsTimeline')}
               </button>
@@ -625,19 +774,21 @@ export default function Explore() {
 
         <DateRibbon />
 
-        <AnimatePresence initial={false}>
-          {showRoomsTimeline && (
-            <motion.div
-              key="rooms-timeline"
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              <BoshlikRoomsTimeline selectedDate={filters.date ?? isoOffset(0)} />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div ref={timelineWrapRef}>
+          <AnimatePresence initial={false}>
+            {showRoomsTimeline && (
+              <motion.div
+                key="rooms-timeline"
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+              >
+                <BoshlikRoomsTimeline selectedDate={filters.date ?? isoOffset(0)} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* Part 1: Boshlik Venue Zone Filter Ribbon */}
         <div className="zone-ribbon" role="group" aria-label="Boshlik Campus Venue Zones">
@@ -708,32 +859,37 @@ export default function Explore() {
                   {c.label}
                 </button>
               ))}
-              {(['all', 'EN', 'UZ', 'RU'] as const).map((lang) => (
-                <button
-                  key={lang}
-                  type="button"
-                  className={`pill ${filters.language === lang ? 'is-active' : ''}`}
-                  onClick={() => app.setFilters({ language: lang as Lang | 'all' })}
-                  title="Filter by Event Language"
-                >
-                  🌐 {lang === 'all' ? 'All Langs' : lang}
-                </button>
-              ))}
             </div>
 
-            <div className="search-wrap">
-              <Icon name="search" size={16} />
-              <input
-                value={filters.search}
-                onChange={(e) => app.setFilters({ search: e.target.value })}
-                placeholder={t(app.uiLang, 'searchPlaceholder')}
-                aria-label="Search events and posts"
-              />
-              {filters.search && (
-                <button className="search-clear" onClick={() => app.setFilters({ search: '' })} aria-label="Clear search">
-                  <Icon name="close" size={13} />
-                </button>
-              )}
+            <div className="search-tools-group">
+              <div className="lang-segment" role="group" aria-label="Filter by Event Language">
+                {(['all', 'EN', 'UZ', 'RU'] as const).map((lang) => (
+                  <button
+                    key={lang}
+                    type="button"
+                    className={filters.language === lang ? 'is-active' : ''}
+                    onClick={() => app.setFilters({ language: lang as Lang | 'all' })}
+                    title="Filter by Event Language"
+                  >
+                    {lang === 'all' ? '🌐 All' : lang}
+                  </button>
+                ))}
+              </div>
+
+              <div className="search-wrap">
+                <Icon name="search" size={16} />
+                <input
+                  value={filters.search}
+                  onChange={(e) => app.setFilters({ search: e.target.value })}
+                  placeholder={t(app.uiLang, 'searchPlaceholder')}
+                  aria-label="Search events and posts"
+                />
+                {filters.search && (
+                  <button className="search-clear" onClick={() => app.setFilters({ search: '' })} aria-label="Clear search">
+                    <Icon name="close" size={13} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -815,11 +971,16 @@ export default function Explore() {
             </div>
           </div>
         ) : (
-          <div className="event-grid">
+          <motion.div
+            className="event-grid"
+            variants={staggerContainer}
+            initial="hidden"
+            animate="show"
+          >
             {feed.map((e) => (
               <EventCard key={e.id} event={e} />
             ))}
-          </div>
+          </motion.div>
         )}
       </section>
     </div>
