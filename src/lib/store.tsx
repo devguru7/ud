@@ -10,6 +10,7 @@ import type {
   AppNotification,
   Broadcast,
   CampusPost,
+  CampusTask,
   Category,
   Club,
   ClubMemberAssignment,
@@ -24,14 +25,18 @@ import type {
   PersistedState,
   Person,
   Persona,
+  Role,
+  RoleInviteCode,
   StudentDirectoryItem,
   Ticket,
 } from '../types';
 import {
   buildSeedClubs,
   buildSeedEvents,
+  buildSeedInviteCodes,
   buildSeedNotifications,
   buildSeedPosts,
+  buildSeedTasks,
   buildSeedTickets,
   PERSONAS,
   ROOMS,
@@ -43,6 +48,7 @@ import {
   randomHash,
   randomTicketId,
   buildICS,
+  copyText,
   downloadFile,
   minutesFromTime,
   timeFromMinutes,
@@ -152,15 +158,18 @@ function buildAllPersonasFromDirectory(
 function initialState(): PersistedState {
   const directory = [...STUDENT_DIRECTORY];
   return {
-    version: 4,
+    version: 6,
     theme: 'light',
     uiLang: 'EN',
     personaId: 'usr_1',
+    studentViewLens: false,
     personas: buildAllPersonasFromDirectory(PERSONAS, directory),
     directory,
     followedClubs: ['club_fintech', 'club_acca', 'club_debate'],
     savedEventIds: ['evt_1'],
     notifications: buildSeedNotifications(),
+    tasks: buildSeedTasks(),
+    inviteCodes: buildSeedInviteCodes(),
     clubs: buildSeedClubs(),
     events: buildSeedEvents(),
     posts: buildSeedPosts(),
@@ -214,8 +223,9 @@ function loadState(): PersistedState {
     return {
       ...initialState(),
       ...parsed,
-      version: 4,
+      version: 6,
       uiLang: parsed.uiLang ?? 'EN',
+      studentViewLens: Boolean(parsed.studentViewLens),
       personas,
       directory,
       savedEventIds: Array.isArray(parsed.savedEventIds) ? parsed.savedEventIds : ['evt_1'],
@@ -223,6 +233,14 @@ function loadState(): PersistedState {
         Array.isArray(parsed.notifications) && parsed.notifications.length > 0
           ? parsed.notifications
           : buildSeedNotifications(),
+      tasks:
+        Array.isArray(parsed.tasks) && parsed.tasks.length > 0
+          ? parsed.tasks
+          : buildSeedTasks(),
+      inviteCodes:
+        Array.isArray(parsed.inviteCodes) && parsed.inviteCodes.length > 0
+          ? parsed.inviteCodes
+          : buildSeedInviteCodes(),
       clubs: Array.isArray(parsed.clubs) && parsed.clubs.length > 0 ? parsed.clubs : buildSeedClubs(),
       events: migratedEvents,
       posts: Array.isArray(parsed.posts) && parsed.posts.length > 0 ? parsed.posts : buildSeedPosts(),
@@ -256,9 +274,16 @@ export interface PostModalState {
   defaultType?: CampusPost['type'];
 }
 
+export type AccountModalTab = 'profile' | 'roles' | 'invite' | 'directory';
+export type TasksModalTab = 'tasks' | 'qa';
+
 interface AppContextValue {
   state: PersistedState;
+  replaceStateSnapshot: (nextState: PersistedState) => void;
   persona: Persona;
+  rawPersona: Persona;
+  studentViewLens: boolean;
+  setStudentViewLens: (on: boolean) => void;
   personas: Persona[];
   directory: StudentDirectoryItem[];
   theme: 'light' | 'dark';
@@ -285,8 +310,32 @@ interface AppContextValue {
     programme: string;
     programmeShort?: string;
     year?: string;
+    role?: Role | 'coordinator';
+    clubId?: string;
+    studentId?: string;
+    color?: string;
+    bio?: string;
     switchNow?: boolean;
   }) => Persona;
+  updatePersonaProfile: (id: string, patch: Partial<Persona>) => void;
+  syncGoogleIdentityToPersona: () => Promise<void>;
+  accountModalTab: AccountModalTab | null;
+  openAccountModal: (tab?: AccountModalTab) => void;
+  closeAccountModal: () => void;
+  generateRoleInviteCode: (clubId: string, roleId: string, customCode?: string) => RoleInviteCode;
+  redeemRoleInviteCode: (code: string) => Result;
+  tasksModalTab: TasksModalTab | null;
+  openTasksModal: (tab?: TasksModalTab) => void;
+  closeTasksModal: () => void;
+  addTask: (
+    payload: Omit<CampusTask, 'id' | 'userId' | 'completed' | 'syncedToGoogleTasks'> & {
+      userId?: string;
+    },
+  ) => CampusTask;
+  toggleTask: (taskId: string) => void;
+  deleteTask: (taskId: string) => void;
+  syncTasksToGoogle: () => Promise<number>;
+  pendingTasksCount: number;
   setFilters: (patch: Partial<Filters>) => void;
   resetFilters: () => void;
   resetDemo: () => void;
@@ -398,6 +447,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [studioPreset, setStudioPreset] = useState<{ roomId?: string; date?: string; startTime?: string } | null>(null);
   const [activePostModal, setActivePostModal] = useState<PostModalState | null>(null);
   const [roleModalClubId, setRoleModalClubId] = useState<string | null>(null);
+  const [accountModalTab, setAccountModalTab] = useState<AccountModalTab | null>(null);
+  const [tasksModalTab, setTasksModalTab] = useState<TasksModalTab | null>(null);
   const [certificateTicketId, setCertificateTicketId] = useState<string | null>(null);
   const [organizerEventId, setOrganizerEventId] = useState<string | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -414,9 +465,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [state.directory],
   );
 
-  const persona = useMemo(
+  const rawPersona = useMemo(
     () => personas.find((p) => p.id === state.personaId) ?? personas[0],
     [personas, state.personaId],
+  );
+
+  const studentViewLens = Boolean(state.studentViewLens);
+
+  const persona = useMemo<Persona>(
+    () =>
+      studentViewLens
+        ? { ...rawPersona, role: 'student', studentLens: true }
+        : rawPersona,
+    [rawPersona, studentViewLens],
   );
 
   useEffect(() => {
@@ -516,7 +577,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.theme]);
 
   const anyOverlayOpen = Boolean(
-    drawerEventId || certificateTicketId || activePostModal || roleModalClubId || modal,
+    drawerEventId ||
+      certificateTicketId ||
+      activePostModal ||
+      roleModalClubId ||
+      accountModalTab ||
+      tasksModalTab ||
+      modal,
   );
   useEffect(() => {
     if (anyOverlayOpen) {
@@ -594,6 +661,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const replaceStateSnapshot = (nextState: PersistedState) => {
+    setState(nextState);
+  };
+
   const setTheme = (theme: 'light' | 'dark') => setState((prev) => ({ ...prev, theme }));
 
   const toggleTheme = () =>
@@ -602,6 +673,119 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setUiLang = (uiLang: Lang) => {
     setState((prev) => ({ ...prev, uiLang }));
   };
+
+  const setStudentViewLens = (on: boolean) => {
+    setState((prev) => ({ ...prev, studentViewLens: on }));
+    pushToast({
+      tone: 'info',
+      title: on ? '🎓 Student Preview Lens Enabled' : '⚡ Full Delegated Roles Active',
+      message: on
+        ? `Previewing UDEA Pulse as a regular student (${rawPersona.name}’s elevated permissions are temporarily hidden).`
+        : `Restored ${rawPersona.name}’s full Campus & Club capabilities.`,
+    });
+  };
+
+  const openAccountModal = (tab: AccountModalTab = 'profile') => setAccountModalTab(tab);
+  const closeAccountModal = () => setAccountModalTab(null);
+
+  const openTasksModal = (tab: TasksModalTab = 'tasks') => setTasksModalTab(tab);
+  const closeTasksModal = () => setTasksModalTab(null);
+
+  const addTask = (
+    payload: Omit<CampusTask, 'id' | 'userId' | 'completed' | 'syncedToGoogleTasks'> & {
+      userId?: string;
+    },
+  ): CampusTask => {
+    const task: CampusTask = {
+      id: `tsk_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      userId: payload.userId || rawPersona.id,
+      title: payload.title.trim(),
+      notes: payload.notes?.trim() || undefined,
+      dueDate: payload.dueDate || isoDate(),
+      dueTime: payload.dueTime || '12:00',
+      category: payload.category,
+      linkedEventId: payload.linkedEventId,
+      linkedClubId: payload.linkedClubId,
+      completed: false,
+      syncedToGoogleTasks: false,
+      xpReward: payload.xpReward || 15,
+    };
+    setState((prev) => ({
+      ...prev,
+      tasks: [task, ...(prev.tasks ?? [])],
+    }));
+    return task;
+  };
+
+  const toggleTask = (taskId: string) => {
+    const target = (state.tasks ?? []).find((t) => t.id === taskId);
+    if (!target) return;
+    const nextCompleted = !target.completed;
+    const deltaXp = nextCompleted ? target.xpReward : -target.xpReward;
+    setState((prev) => ({
+      ...prev,
+      tasks: (prev.tasks ?? []).map((t) =>
+        t.id === taskId ? { ...t, completed: nextCompleted } : t,
+      ),
+      personas: (prev.personas ?? personas).map((p) =>
+        p.id === rawPersona.id ? { ...p, xp: Math.max(0, p.xp + deltaXp) } : p,
+      ),
+    }));
+    pushToast({
+      tone: nextCompleted ? 'success' : 'info',
+      title: nextCompleted
+        ? `✓ Task completed (+${target.xpReward} Campus XP)`
+        : 'Task reopened',
+      message: target.title,
+    });
+  };
+
+  const deleteTask = (taskId: string) => {
+    setState((prev) => ({
+      ...prev,
+      tasks: (prev.tasks ?? []).filter((t) => t.id !== taskId),
+    }));
+    pushToast({
+      tone: 'info',
+      title: 'Task removed from Action Queue',
+    });
+  };
+
+  const syncTasksToGoogle = async (): Promise<number> => {
+    const myTasks = (state.tasks ?? []).filter(
+      (t) => t.userId === rawPersona.id || t.userId === 'all',
+    );
+    const checklist = myTasks
+      .map(
+        (t) =>
+          `${t.completed ? '[x]' : '[ ]'} ${t.title} (Due ${t.dueDate}${t.dueTime ? ` ${t.dueTime}` : ''} · +${t.xpReward} XP)`,
+      )
+      .join('\n');
+    await copyText(checklist);
+    setState((prev) => ({
+      ...prev,
+      tasks: (prev.tasks ?? []).map((t) =>
+        t.userId === rawPersona.id || t.userId === 'all'
+          ? { ...t, syncedToGoogleTasks: true }
+          : t,
+      ),
+    }));
+    pushToast({
+      tone: 'success',
+      telegram: true,
+      title: `☁️ ${myTasks.length} Tasks Synced to Google Tasks`,
+      message: 'Formatted checklist copied to clipboard & marked synced for your UDEA Google account.',
+    });
+    return myTasks.length;
+  };
+
+  const pendingTasksCount = useMemo(
+    () =>
+      (state.tasks ?? []).filter(
+        (t) => !t.completed && (t.userId === rawPersona.id || t.userId === 'all'),
+      ).length,
+    [state.tasks, rawPersona.id],
+  );
 
   const ensureStudentInState = (
     userId: string,
@@ -668,11 +852,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     programme: string;
     programmeShort?: string;
     year?: string;
+    role?: Role | 'coordinator';
+    clubId?: string;
+    studentId?: string;
+    color?: string;
+    bio?: string;
     switchNow?: boolean;
   }): Persona => {
-    const id = `stu_${Date.now().toString(36)}`;
+    const id = `stu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
     const colors = ['#2563EB', '#10B981', '#8B5CF6', '#EC4899', '#F97316', '#0EA5E9'];
-    const color = colors[Math.floor(Math.random() * colors.length)];
+    const color = payload.color || colors[Math.floor(Math.random() * colors.length)];
     const shortProg =
       payload.programmeShort ||
       (payload.programme.includes('Finance')
@@ -688,19 +877,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ? payload.telegram.trim()
       : `@${payload.telegram.trim().replace(/[^a-zA-Z0-9_]/g, '') || 'student_udea'}`;
 
+    const actualRole: Role =
+      payload.role === 'admin'
+        ? 'admin'
+        : payload.role === 'club_lead'
+          ? 'club_lead'
+          : 'student';
+
+    const targetClubId = payload.clubId || 'club_fintech';
+    const headlineRole =
+      payload.role === 'admin'
+        ? 'Campus Coordinator · Admin'
+        : payload.role === 'club_lead'
+          ? 'Club President · Verified Society'
+          : payload.role === 'coordinator'
+            ? 'Delegated Club Coordinator'
+            : `${shortProg} · ${payload.year || 'Year 2'}`;
+
     const newPersona: Persona = {
       id,
       name: payload.name.trim(),
-      role: 'student',
+      role: actualRole,
       programme: payload.programme,
       programmeShort: shortProg,
       year: payload.year || 'Year 2',
       telegram: cleanTg,
-      studentId: `UDEA-26-${Math.floor(1000 + Math.random() * 8999)}`,
-      xp: 200,
+      studentId: payload.studentId?.trim() || `UDEA-26-${Math.floor(1000 + Math.random() * 8999)}`,
+      xp: actualRole === 'admin' ? 950 : actualRole === 'club_lead' ? 650 : 250,
       reliabilityScore: 100,
+      clubId: actualRole === 'club_lead' ? targetClubId : undefined,
       color,
-      headlineRole: `${shortProg} · ${payload.year || 'Year 2'}`,
+      headlineRole,
+      bio: payload.bio?.trim() || undefined,
     };
 
     const dirEntry: StudentDirectoryItem = {
@@ -714,27 +922,251 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       year: newPersona.year,
     };
 
-    setState((prev) => ({
-      ...prev,
-      personas: [...(prev.personas ?? personas), newPersona],
-      directory: [...(prev.directory ?? directory), dirEntry],
-      personaId: payload.switchNow ? id : prev.personaId,
-    }));
+    setState((prev) => {
+      let nextClubs = prev.clubs;
+      if (payload.role === 'coordinator') {
+        nextClubs = prev.clubs.map((c) => {
+          if (c.id !== targetClubId) return c;
+          const defaultRole = c.customRoles[0];
+          if (!defaultRole) return c;
+          return {
+            ...c,
+            roster: [
+              ...c.roster,
+              {
+                id: `asg_${Date.now()}`,
+                clubId: c.id,
+                userId: id,
+                userName: newPersona.name,
+                userTelegram: cleanTg,
+                userProgramme: payload.programme,
+                roleId: defaultRole.id,
+                assignedBy: 'Account Studio',
+                assignedAt: new Date().toISOString(),
+              },
+            ],
+          };
+        });
+      }
+      return {
+        ...prev,
+        clubs: nextClubs,
+        personas: [...(prev.personas ?? personas), newPersona],
+        directory: [...(prev.directory ?? directory), dirEntry],
+        personaId: payload.switchNow ? id : prev.personaId,
+        studentViewLens: payload.switchNow ? false : prev.studentViewLens,
+      };
+    });
 
     pushToast({
       tone: 'success',
       telegram: true,
       title: payload.switchNow ? `Connected & switched to ${newPersona.name}` : `${newPersona.name} added to Campus Directory`,
-      message: `${cleanTg} (${shortProg}) is now available in the Account Switcher and Role Architect.`,
+      message: `${cleanTg} (${headlineRole}) is now active in the Account & Role Center.`,
     });
 
     return newPersona;
   };
 
+  const updatePersonaProfile = (id: string, patch: Partial<Persona>) => {
+    const shortProg =
+      patch.programmeShort ||
+      (patch.programme
+        ? patch.programme.includes('Finance')
+          ? 'Finance'
+          : patch.programme.includes('Data')
+            ? 'Data Analytics'
+            : patch.programme.includes('Management')
+              ? 'Management'
+              : patch.programme.includes('Agri')
+                ? 'AgriTech'
+                : 'Foundation'
+        : undefined);
+
+    const cleanTg =
+      patch.telegram !== undefined
+        ? patch.telegram.trim().startsWith('@')
+          ? patch.telegram.trim()
+          : `@${patch.telegram.trim().replace(/[^a-zA-Z0-9_]/g, '') || 'student_udea'}`
+        : undefined;
+
+    setState((prev) => ({
+      ...prev,
+      personas: (prev.personas ?? personas).map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              ...patch,
+              ...(shortProg ? { programmeShort: shortProg } : {}),
+              ...(cleanTg ? { telegram: cleanTg } : {}),
+            }
+          : p,
+      ),
+      directory: (prev.directory ?? directory).map((d) =>
+        d.id === id
+          ? {
+              ...d,
+              ...(patch.name ? { name: patch.name.trim() } : {}),
+              ...(cleanTg ? { telegram: cleanTg } : {}),
+              ...(patch.programme ? { programme: patch.programme } : {}),
+              ...(shortProg ? { programmeShort: shortProg } : {}),
+              ...(patch.color ? { color: patch.color } : {}),
+              ...(patch.studentId ? { studentId: patch.studentId } : {}),
+              ...(patch.year ? { year: patch.year } : {}),
+            }
+          : d,
+      ),
+    }));
+
+    pushToast({
+      tone: 'success',
+      title: 'Campus Identity Profile Updated',
+      message: `Saved changes to ${patch.name ?? rawPersona.name}’s UDEA passport.`,
+    });
+  };
+
+  const syncGoogleIdentityToPersona = async () => {
+    const activeGoogle = firebaseUser || auth.currentUser;
+    const syncedName = activeGoogle?.displayName || rawPersona.name;
+    const syncedEmail =
+      activeGoogle?.email ||
+      `${rawPersona.telegram.replace('@', '')}@student.udea.uz`;
+    const syncedUid = activeGoogle?.uid || `google_uid_${rawPersona.id}`;
+
+    updatePersonaProfile(rawPersona.id, {
+      name: syncedName,
+      email: syncedEmail,
+      linkedFirebaseUid: syncedUid,
+    });
+
+    if (activeGoogle) {
+      await syncToCloud();
+    } else {
+      setCloudSyncStatus('synced');
+      pushToast({
+        tone: 'success',
+        telegram: true,
+        title: `Linked Google Identity (${syncedEmail})`,
+        message: `Connected ${syncedName}’s Google Workspace & Tasks identity to UDEA Profile ${rawPersona.studentId}.`,
+      });
+    }
+  };
+
+  const generateRoleInviteCode = (
+    clubId: string,
+    roleId: string,
+    customCode?: string,
+  ): RoleInviteCode => {
+    const club = state.clubs.find((c) => c.id === clubId) ?? state.clubs[0];
+    const role =
+      club?.customRoles.find((r) => r.id === roleId) ??
+      club?.customRoles[0] ?? {
+        id: roleId,
+        clubId: club?.id ?? 'club_fintech',
+        title: 'Delegated Coordinator',
+        badgeColor: '#10B981',
+        permissions: ['create_events', 'publish_posts', 'scan_tickets'],
+      };
+    const prefix = (club?.short ?? 'UDEA')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 7)
+      .toUpperCase();
+    const roleSlug = role.title
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 6)
+      .toUpperCase();
+    const code = (
+      customCode?.trim() ||
+      `${prefix}-${roleSlug}-${Math.floor(100 + Math.random() * 899)}`
+    ).toUpperCase();
+
+    const record: RoleInviteCode = {
+      code,
+      clubId: club.id,
+      clubShort: club.short,
+      roleId: role.id,
+      roleTitle: role.title,
+      badgeColor: role.badgeColor || club.color || '#10B981',
+      permissions: role.permissions,
+      createdBy: rawPersona.name,
+    };
+
+    setState((prev) => ({
+      ...prev,
+      inviteCodes: [
+        record,
+        ...(prev.inviteCodes ?? []).filter((c) => c.code.toUpperCase() !== code),
+      ],
+    }));
+
+    pushToast({
+      tone: 'success',
+      telegram: true,
+      title: `Invite Code Generated: ${code}`,
+      message: `Share ${code} with any student to grant “${role.title}” in ${club.short}.`,
+    });
+
+    return record;
+  };
+
+  const redeemRoleInviteCode = (rawCode: string): Result => {
+    const clean = rawCode.trim().toUpperCase();
+    if (!clean) {
+      return { ok: false, message: 'Paste a valid Role Invite Code (e.g. FINTECH-COORD-2026).' };
+    }
+
+    const aliasMap: Record<string, string> = {
+      'FINTECH-CASE-LEAD-2026': 'FINTECH-COORD-2026',
+      'UDEA-INV-FINTECH-COORD': 'FINTECH-COORD-2026',
+      'CYBER-TOURNAMENT-ORG': 'CYBER-SCANNER-2026',
+    };
+    const lookupCode = aliasMap[clean] ?? clean;
+
+    const allCodes = [...(state.inviteCodes ?? []), ...buildSeedInviteCodes()];
+    const matched = allCodes.find((c) => c.code.toUpperCase() === lookupCode);
+    if (!matched) {
+      return {
+        ok: false,
+        message: `Invite code “${clean}” was not recognized. Try FINTECH-COORD-2026, DEBATE-JUDGE-2026, or CYBER-SCANNER-2026.`,
+      };
+    }
+
+    const club = state.clubs.find((c) => c.id === matched.clubId);
+    if (!club) {
+      return { ok: false, message: 'Target club for this invite code no longer exists.' };
+    }
+
+    assignClubMember(club.id, {
+      userId: rawPersona.id,
+      userName: rawPersona.name,
+      userTelegram: rawPersona.telegram,
+      userProgramme: rawPersona.programme ?? 'UDEA Student',
+      roleId: matched.roleId,
+    });
+
+    setState((prev) => ({
+      ...prev,
+      studentViewLens: false,
+    }));
+
+    pushToast({
+      tone: 'success',
+      telegram: true,
+      title: `🎉 Role Claimed: ${matched.roleTitle}`,
+      message: `You are now a verified ${matched.roleTitle} in ${matched.clubShort}. Host Studio, Post Studio & Scanner unlocked!`,
+    });
+
+    return {
+      ok: true,
+      message: `Claimed ${matched.roleTitle} in ${matched.clubShort}!`,
+      id: matched.roleId,
+    };
+  };
+
   const setPersona = (id: string) => {
     const next = personas.find((p) => p.id === id);
-    if (!next || next.id === state.personaId) return;
-    setState((prev) => ({ ...prev, personaId: id }));
+    if (!next) return;
+    setState((prev) => ({ ...prev, personaId: id, studentViewLens: false }));
     const customBadge = getPrimaryRoleBadgeForUser(next, state.clubs);
     const permission =
       next.role === 'admin'
@@ -846,13 +1278,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setStudioPreset(null);
     setActivePostModal(null);
     setRoleModalClubId(null);
+    setAccountModalTab(null);
+    setTasksModalTab(null);
     setCertificateTicketId(null);
     setOrganizerEventId(null);
     setToasts([]);
     pushToast({
       tone: 'success',
-      title: 'Demo state reset to v4.0',
-      message: 'Boshlik rooms, delegated club roles, campus posts, tickets and approvals restored.',
+      title: 'Demo state reset to v6.0',
+      message: 'Boshlik rooms, delegated club roles, Google Tasks, invite codes, posts, tickets and approvals restored.',
     });
   };
 
@@ -1023,9 +1457,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       screeningStatus: event.registrationMode === 'internal_screening' ? 'pending' : undefined,
       issuedAt: new Date().toISOString(),
     };
+    const rsvpTask: CampusTask = {
+      id: `tsk_rsvp_${Date.now()}`,
+      userId: rawPersona.id,
+      title: `Confirm seat 4h before & bring QR pass for ${event.title}`,
+      notes: `Pass ID ${ticket.qrHash} · Room ${event.roomId}`,
+      dueDate: event.date,
+      dueTime: event.startTime,
+      category: 'rsvp_prep',
+      linkedEventId: event.id,
+      completed: false,
+      syncedToGoogleTasks: false,
+      xpReward: 15,
+    };
+
     setState((prev) => ({
       ...prev,
       tickets: [...prev.tickets, ticket],
+      tasks: [rsvpTask, ...(prev.tasks ?? [])],
       events: prev.events.map((e) => {
         if (e.id !== eventId) return e;
         const alreadyListed = e.attendees.some((a) => a.id === `att_${persona.id}`);
@@ -1049,7 +1498,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         tone: 'success',
         telegram: true,
         title: `Seat #${seat} confirmed`,
-        message: `Holographic QR pass generated for “${event.title}”. Telegram reminder set for 4h before.`,
+        message: `Holographic QR pass & Google Task generated for “${event.title}”.`,
       });
     }
   };
@@ -1961,9 +2410,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       checkIns: {},
     };
 
+    const coordTasks: CampusTask[] = [
+      {
+        id: `tsk_evt_equip_${Date.now()}`,
+        userId: rawPersona.id,
+        title: `Verify Boshlik room equipment for ${event.title}`,
+        notes: `Check ${event.equipmentRequested.join(', ') || 'AV & stage setup'} before start.`,
+        dueDate: event.date,
+        dueTime: event.startTime,
+        category: 'coordinator_duty',
+        linkedEventId: id,
+        linkedClubId: event.hostClubId ?? undefined,
+        completed: false,
+        syncedToGoogleTasks: false,
+        xpReward: 25,
+      },
+      {
+        id: `tsk_evt_scan_${Date.now() + 1}`,
+        userId: rawPersona.id,
+        title: `Open QR Scanner 30m before start (${event.title})`,
+        notes: 'Check in confirmed students and promote Waitlist #1.',
+        dueDate: event.date,
+        dueTime: event.startTime,
+        category: 'coordinator_duty',
+        linkedEventId: id,
+        completed: false,
+        syncedToGoogleTasks: false,
+        xpReward: 25,
+      },
+    ];
+
     setState((prev) => ({
       ...prev,
       events: [...prev.events, event],
+      tasks: [...coordTasks, ...(prev.tasks ?? [])],
       createdEventIds: [...prev.createdEventIds, id],
     }));
 
@@ -2048,9 +2528,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addEventTeamMember = (eventId: string, member: EventTeamMember) => {
+    const targetEvent = state.events.find((e) => e.id === eventId);
     ensureStudentInState(member.userId, member.name, member.telegram, member.programme, member.programme);
+    const staffTask: CampusTask = {
+      id: `tsk_staff_${Date.now()}`,
+      userId: member.userId,
+      title: `Verify Boshlik room equipment for ${targetEvent?.title ?? 'Event'}`,
+      notes: `Assigned as ${member.customLabel}. Open QR Scanner 30m before start.`,
+      dueDate: targetEvent?.date ?? isoDate(),
+      dueTime: targetEvent?.startTime ?? '10:00',
+      category: 'coordinator_duty',
+      linkedEventId: eventId,
+      completed: false,
+      syncedToGoogleTasks: false,
+      xpReward: 25,
+    };
     setState((prev) => ({
       ...prev,
+      tasks: [staffTask, ...(prev.tasks ?? [])],
       events: prev.events.map((e) => {
         if (e.id !== eventId) return e;
         const filtered = (e.teamMembers ?? []).filter((m) => m.userId !== member.userId);
@@ -2164,8 +2659,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       assignedBy: persona.name,
       assignedAt: new Date().toISOString(),
     };
+    const roleTask: CampusTask = {
+      id: `tsk_role_${Date.now()}_${Math.random().toString(36).slice(2, 4)}`,
+      userId: payload.userId,
+      title: `Publish introductory Campus Pulse update as ${role?.title ?? 'Coordinator'}`,
+      notes: `Delegated in ${club?.short ?? 'Club'} by ${persona.name}.`,
+      dueDate: isoDate(),
+      dueTime: '17:00',
+      category: 'club_role',
+      linkedClubId: clubId,
+      completed: false,
+      syncedToGoogleTasks: false,
+      xpReward: 20,
+    };
     setState((prev) => ({
       ...prev,
+      tasks: [roleTask, ...(prev.tasks ?? [])],
       clubs: prev.clubs.map((c) => {
         if (c.id !== clubId) return c;
         const filtered = c.roster.filter(
@@ -2398,7 +2907,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value: AppContextValue = {
     state,
+    replaceStateSnapshot,
     persona,
+    rawPersona,
+    studentViewLens,
+    setStudentViewLens,
     personas,
     directory,
     theme: state.theme,
@@ -2420,6 +2933,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     toggleTheme,
     setPersona,
     registerStudentAccount,
+    updatePersonaProfile,
+    syncGoogleIdentityToPersona,
+    accountModalTab,
+    openAccountModal,
+    closeAccountModal,
+    generateRoleInviteCode,
+    redeemRoleInviteCode,
+    tasksModalTab,
+    openTasksModal,
+    closeTasksModal,
+    addTask,
+    toggleTask,
+    deleteTask,
+    syncTasksToGoogle,
+    pendingTasksCount,
     setFilters,
     resetFilters,
     resetDemo,

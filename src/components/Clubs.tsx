@@ -889,7 +889,18 @@ export function RoleManagerModal() {
                           : role.allowedCategories.map((c) => CATEGORY_SHORT[c]).join(', ')}
                       </span>
                       {canManageRoles && (
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={async () => {
+                              const inv = app.generateRoleInviteCode(club.id, role.id);
+                              if (inv) await copyText(inv.code);
+                            }}
+                            title="Generate a 1-Click Role Invite Code for this custom role"
+                          >
+                            🔑 Invite Code
+                          </button>
                           <button
                             type="button"
                             className="btn btn-ghost btn-xs"

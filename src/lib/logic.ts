@@ -86,16 +86,74 @@ export function availableRooms(
   );
 }
 
+export interface FreeRoomInterval {
+  startTime: string;
+  endTime: string;
+  startMins: number;
+  endMins: number;
+  leftPct: number;
+  widthPct: number;
+}
+
+export function computeFreeRoomIntervals(
+  events: EventItem[],
+  roomId: string,
+  date: string,
+  dayStartMins = 8 * 60,
+  dayEndMins = 21 * 60,
+): FreeRoomInterval[] {
+  const span = Math.max(1, dayEndMins - dayStartMins);
+  const roomEvents = events
+    .filter(
+      (e) =>
+        e.roomId === roomId &&
+        e.date === date &&
+        (e.approvalStatus === 'approved' ||
+          e.approvalStatus === 'pending_room_approval' ||
+          e.approvalStatus === 'pending'),
+    )
+    .sort((a, b) => minutesFromTime(a.startTime) - minutesFromTime(b.startTime));
+
+  const gaps: FreeRoomInterval[] = [];
+  let cursor = dayStartMins;
+  for (const ev of roomEvents) {
+    const s = Math.max(dayStartMins, minutesFromTime(ev.startTime));
+    const e = Math.min(dayEndMins, minutesFromTime(ev.endTime));
+    if (s - cursor >= 60) {
+      gaps.push({
+        startTime: timeFromMinutes(cursor),
+        endTime: timeFromMinutes(s),
+        startMins: cursor,
+        endMins: s,
+        leftPct: ((cursor - dayStartMins) / span) * 100,
+        widthPct: ((s - cursor) / span) * 100,
+      });
+    }
+    cursor = Math.max(cursor, e);
+  }
+  if (dayEndMins - cursor >= 60) {
+    gaps.push({
+      startTime: timeFromMinutes(cursor),
+      endTime: timeFromMinutes(dayEndMins),
+      startMins: cursor,
+      endMins: dayEndMins,
+      leftPct: ((cursor - dayStartMins) / span) * 100,
+      widthPct: ((dayEndMins - cursor) / span) * 100,
+    });
+  }
+  return gaps;
+}
+
 /**
  * Centralized Permission Resolution Engine for Clubs
- * Respects CustomClubRole.allowedCategories when category is provided.
+ * Respects CustomClubRole.allowedCategories when category is provided, and studentLens preview mode.
  */
 export function getUserPermissionsForClub(
   user: Persona,
   club: Club,
   category?: Category | string,
 ): PermissionFlag[] {
-  if (!user || !club) return [];
+  if (!user || !club || user.studentLens) return [];
   if (user.role === 'admin') return [...ALL_PERMISSIONS];
   if (club.leadId === user.id || (user.role === 'club_lead' && user.clubId === club.id)) {
     return [...ALL_PERMISSIONS];
@@ -129,6 +187,7 @@ export function getUserRoleInClub(
   permissions: PermissionFlag[];
   allowedCategories?: Category[];
 } | null {
+  if (!user || !club || user.studentLens) return null;
   if (user.role === 'admin') {
     return {
       title: 'Campus Admin',
@@ -169,7 +228,7 @@ export interface UserRoleBadgeInfo {
 }
 
 export function getAllRoleBadgesForUser(user: Persona, clubs: Club[]): UserRoleBadgeInfo[] {
-  if (!user) return [];
+  if (!user || user.studentLens) return [];
   const badges: UserRoleBadgeInfo[] = [];
   for (const club of clubs) {
     if (club.leadId === user.id || (user.role === 'club_lead' && user.clubId === club.id)) {
@@ -217,7 +276,7 @@ export function getUserPermissionsForEvent(
   event: EventItem,
   clubs: Club[] = [],
 ): PermissionFlag[] {
-  if (!user || !event) return [];
+  if (!user || !event || user.studentLens) return [];
   if (user.role === 'admin') return [...ALL_PERMISSIONS];
   if (event.createdBy === user.id) {
     return [
@@ -261,6 +320,7 @@ export function hasEventPermission(
 }
 
 export function canManage(event: EventItem, persona: Persona, clubs: Club[] = []): boolean {
+  if (!persona || persona.studentLens) return false;
   if (persona.role === 'admin') return true;
   if (event.createdBy === persona.id) return true;
   if (persona.clubId && event.hostClubId === persona.clubId) return true;
@@ -268,6 +328,7 @@ export function canManage(event: EventItem, persona: Persona, clubs: Club[] = []
 }
 
 export function getUserCanPublishPosts(user: Persona, clubs: Club[]): boolean {
+  if (!user || user.studentLens) return false;
   if (user.role === 'admin' || user.role === 'club_lead') return true;
   return clubs.some((c) => getUserPermissionsForClub(user, c).includes('publish_posts'));
 }
@@ -278,6 +339,7 @@ export function getUserCanCreateOfficialEvents(
   clubId?: string | null,
   category?: Category | string,
 ): boolean {
+  if (!user || user.studentLens) return false;
   if (user.role === 'admin' || user.role === 'club_lead') return true;
   if (clubId) {
     const target = clubs.find((c) => c.id === clubId);

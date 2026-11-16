@@ -14,11 +14,6 @@ export default function Topbar() {
   const app = useApp();
   const [personaOpen, setPersonaOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [showNewAccount, setShowNewAccount] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newTelegram, setNewTelegram] = useState('');
-  const [newProg, setNewProg] = useState('BSc (Hons) International Finance and Banking');
-  const [newYear, setNewYear] = useState('Year 2');
 
   const menuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -74,21 +69,174 @@ export default function Topbar() {
     [app.state.notifications, app.persona.id],
   );
 
-  const handleCreateAccount = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    app.registerStudentAccount({
-      name: newName.trim(),
-      telegram: newTelegram.trim() || `@${newName.trim().toLowerCase().split(/\s+/)[0]}_udea`,
-      programme: newProg,
-      year: newYear,
-      switchNow: true,
-    });
-    setNewName('');
-    setNewTelegram('');
-    setShowNewAccount(false);
-    setPersonaOpen(false);
-  };
+  const quickSwitchPersonas = useMemo(() => {
+    const ids = ['usr_1', 'usr_2', 'usr_3', 'usr_4', 'usr_5'];
+    return ids
+      .map((id) => app.personas.find((p) => p.id === id))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p));
+  }, [app.personas]);
+
+  const renderQuickAccountPopover = (isMobilePopover = false) => (
+    <div
+      className="persona-menu quick-account-popover"
+      style={isMobilePopover ? { right: 0, width: 320 } : undefined}
+    >
+      <div className="persona-menu-head">
+        <div className="row-between">
+          <span className="mono">ACTIVE CAMPUS IDENTITY</span>
+          <span className="mono subtle">{app.rawPersona.studentId}</span>
+        </div>
+        <div className="quick-account-card">
+          <Avatar name={app.rawPersona.name} color={app.rawPersona.color} size={36} />
+          <div className="quick-account-meta">
+            <strong>{app.rawPersona.name}</strong>
+            <em>{personaSubtitle(app.persona, app.state.clubs)}</em>
+          </div>
+        </div>
+        <div className="quick-account-cta-row">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm btn-block"
+            onClick={() => {
+              setPersonaOpen(false);
+              app.openAccountModal('profile');
+            }}
+          >
+            <Icon name="shield" size={14} /> Open Account & Role Center
+          </button>
+        </div>
+      </div>
+
+      {/* Active Role Context Lens Switcher */}
+      <div className="quick-lens-box">
+        <div className="row-between">
+          <span className="mono">ACTIVE ROLE CONTEXT LENS</span>
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => {
+              setPersonaOpen(false);
+              app.openAccountModal('roles');
+            }}
+          >
+            7-Perm Matrix →
+          </button>
+        </div>
+        <div className="lens-toggle-bar compact">
+          <button
+            type="button"
+            className={!app.studentViewLens ? 'is-active' : ''}
+            onClick={() => app.setStudentViewLens(false)}
+          >
+            ⚡ Full Delegated Roles
+          </button>
+          <button
+            type="button"
+            className={app.studentViewLens ? 'is-active' : ''}
+            onClick={() => app.setStudentViewLens(true)}
+          >
+            🎓 Preview as Student
+          </button>
+        </div>
+      </div>
+
+      {/* 1-Click Quick Persona Switcher Pills */}
+      <div className="quick-switch-section">
+        <div className="row-between">
+          <span className="mono">1-CLICK PERSONA SWITCH</span>
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => {
+              setPersonaOpen(false);
+              app.openAccountModal('directory');
+            }}
+          >
+            All {app.personas.length} Accounts →
+          </button>
+        </div>
+        <div className="persona-scroll-list compact">
+          {quickSwitchPersonas.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`persona-option ${p.id === app.rawPersona.id ? 'is-active' : ''}`}
+              onClick={() => {
+                app.setPersona(p.id);
+                setPersonaOpen(false);
+              }}
+            >
+              <Avatar name={p.name} color={p.color} size={28} />
+              <span>
+                <strong>{p.name}</strong>
+                <em>{personaSubtitle(p, app.state.clubs)}</em>
+              </span>
+              {p.id === app.rawPersona.id && <Icon name="check" size={14} />}
+            </button>
+          ))}
+        </div>
+        <div className="quick-account-actions-grid">
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => {
+              setPersonaOpen(false);
+              app.openAccountModal('invite');
+            }}
+          >
+            🔑 Claim Invite Code
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => {
+              setPersonaOpen(false);
+              app.openAccountModal('profile');
+            }}
+          >
+            + Create / Edit Account
+          </button>
+        </div>
+      </div>
+
+      <div className="persona-cloud-bar">
+        {app.firebaseUser ? (
+          <div className="row-between" style={{ width: '100%', gap: 8 }}>
+            <span className="mono subtle" style={{ color: 'var(--signal-green)' }}>
+              ☁️ {app.firebaseUser.email?.split('@')[0]}
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={app.syncGoogleIdentityToPersona}
+              >
+                Link Profile
+              </button>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={app.syncToCloud}>
+                Sync
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs btn-block"
+            onClick={app.signInWithGoogle}
+          >
+            <Icon name="globe" size={13} /> Connect Google / Firebase Cloud Sync
+          </button>
+        )}
+      </div>
+
+      <div className="persona-menu-foot">
+        <button className="link-btn" onClick={app.resetDemo}>
+          <Icon name="refresh" size={14} /> Reset demo state
+        </button>
+        <span className="mono subtle">UDEA PULSE V6.0</span>
+      </div>
+    </div>
+  );
 
   return (
     <header className="topbar">
@@ -146,6 +294,20 @@ export default function Topbar() {
           >
             <Icon name="phone" size={14} />
             <span>{app.mobile ? 'Desktop' : 'TG Mini App'}</span>
+          </button>
+
+          <button
+            type="button"
+            className="mini-toggle tasks-qa-btn"
+            onClick={() => app.openTasksModal('tasks')}
+            title="Open Google Tasks Action Queue & Autonomous 15-Point QA Runner"
+            aria-label="Tasks & QA"
+          >
+            <Icon name="check" size={14} />
+            <span>Tasks & QA</span>
+            {app.pendingTasksCount > 0 && (
+              <b className="tasks-badge">{app.pendingTasksCount}</b>
+            )}
           </button>
 
           <label className="quick-select lang-select" title="Interface Language (EN / UZ / RU)">
@@ -240,126 +402,20 @@ export default function Topbar() {
           {/* Persona / Account Switcher */}
           <div className="persona-wrap" ref={!app.mobile ? menuRef : undefined}>
             <button
-              className={`persona-btn ${personaOpen ? 'is-open' : ''}`}
+              className={`persona-btn ${personaOpen ? 'is-open' : ''} ${app.studentViewLens ? 'is-lens-active' : ''}`}
               onClick={() => setPersonaOpen((v) => !v)}
               aria-expanded={personaOpen}
-              title={`${app.persona.name} — ${activeRoleText}`}
+              title={`${app.rawPersona.name} — ${activeRoleText}`}
             >
-              <Avatar name={app.persona.name} color={app.persona.color} size={27} />
+              <Avatar name={app.rawPersona.name} color={app.rawPersona.color} size={27} />
               <span className="persona-btn-text">
-                <strong>{firstName(app.persona.name)}</strong>
+                <strong>{firstName(app.rawPersona.name)}</strong>
                 <em>{activeRoleText}</em>
               </span>
               <Icon name="chevron" size={13} className="rot-90" />
             </button>
 
-            {personaOpen && !app.mobile && (
-              <div className="persona-menu">
-                <div className="persona-menu-head">
-                  <div className="row-between">
-                    <span className="mono">SWITCH CAMPUS ACCOUNT ({app.personas.length})</span>
-                    <button
-                      type="button"
-                      className="link-btn"
-                      onClick={() => setShowNewAccount((v) => !v)}
-                    >
-                      {showNewAccount ? 'Cancel' : '+ New Account'}
-                    </button>
-                  </div>
-                  <p>Test Student, Delegated Coordinator, President & Admin permissions instantly.</p>
-                </div>
-
-                {showNewAccount && (
-                  <form className="new-account-form" onSubmit={handleCreateAccount}>
-                    <input
-                      type="text"
-                      placeholder="Full Name (e.g., Nodirbek Karimov)"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      required
-                    />
-                    <div className="form-row-2">
-                      <input
-                        type="text"
-                        placeholder="@telegram_handle"
-                        value={newTelegram}
-                        onChange={(e) => setNewTelegram(e.target.value)}
-                      />
-                      <select value={newYear} onChange={(e) => setNewYear(e.target.value)}>
-                        <option value="Foundation">Foundation</option>
-                        <option value="Year 1">Year 1</option>
-                        <option value="Year 2">Year 2</option>
-                        <option value="Year 3">Year 3</option>
-                        <option value="MSc">MSc / MBA</option>
-                      </select>
-                    </div>
-                    <select value={newProg} onChange={(e) => setNewProg(e.target.value)}>
-                      <option value="BSc (Hons) International Finance and Banking">BSc International Finance</option>
-                      <option value="BSc (Hons) Business Data Analytics">BSc Business Data Analytics</option>
-                      <option value="BA (Hons) Business Management and Leadership">BA Business Management</option>
-                      <option value="BSc Digital Economics & Agrotechnologies">BSc Digital Economics & AgriTech</option>
-                      <option value="Foundation Year (English & Academic Prep)">Foundation Year</option>
-                    </select>
-                    <button type="submit" className="btn btn-primary btn-sm btn-block">
-                      <Icon name="userPlus" size={14} /> Create & Switch to Account
-                    </button>
-                  </form>
-                )}
-
-                <div className="persona-scroll-list">
-                  {app.personas.map((p) => (
-                    <button
-                      key={p.id}
-                      className={`persona-option ${p.id === app.persona.id ? 'is-active' : ''}`}
-                      onClick={() => {
-                        app.setPersona(p.id);
-                        setPersonaOpen(false);
-                      }}
-                    >
-                      <Avatar name={p.name} color={p.color} size={30} />
-                      <span>
-                        <strong>{p.name}</strong>
-                        <em>{personaSubtitle(p, app.state.clubs)}</em>
-                      </span>
-                      {p.id === app.persona.id && <Icon name="check" size={15} />}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="persona-cloud-bar">
-                  {app.firebaseUser ? (
-                    <div className="row-between" style={{ width: '100%', gap: 8 }}>
-                      <span className="mono subtle" style={{ color: 'var(--signal-green)' }}>
-                        ☁️ {app.firebaseUser.email?.split('@')[0]}
-                      </span>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button type="button" className="btn btn-ghost btn-xs" onClick={app.syncToCloud}>
-                          Sync Now
-                        </button>
-                        <button type="button" className="btn btn-ghost btn-xs" onClick={app.signOutFirebase}>
-                          Sign Out
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-xs btn-block"
-                      onClick={app.signInWithGoogle}
-                    >
-                      <Icon name="globe" size={13} /> Connect Google / Firebase Cloud Sync
-                    </button>
-                  )}
-                </div>
-
-                <div className="persona-menu-foot">
-                  <button className="link-btn" onClick={app.resetDemo}>
-                    <Icon name="refresh" size={14} /> Reset demo state
-                  </button>
-                  <span className="mono subtle">FIRESTORE + LOCAL V4.0</span>
-                </div>
-              </div>
-            )}
+            {personaOpen && !app.mobile && renderQuickAccountPopover(false)}
           </div>
 
           <button
@@ -380,6 +436,20 @@ export default function Topbar() {
         </div>
 
         <div className="mobile-topbar-utils" ref={app.mobile ? menuRef : undefined}>
+          <button
+            type="button"
+            className="icon-btn notif-btn"
+            onClick={() => app.openTasksModal('tasks')}
+            aria-label="Google Tasks & QA Suite"
+            title="Google Tasks & Automated QA Suite"
+          >
+            <Icon name="check" size={16} />
+            {app.pendingTasksCount > 0 && (
+              <span className="notif-dot" style={{ background: 'var(--signal-green)' }}>
+                {app.pendingTasksCount}
+              </span>
+            )}
+          </button>
           <label className="quick-select lang-select" title="Interface Language (EN / UZ / RU)" style={{ height: 32, padding: '0 6px' }}>
             <Icon name="globe" size={13} />
             <select
@@ -468,40 +538,14 @@ export default function Topbar() {
               <Icon name="external" size={17} />
             </button>
           )}
-          <button className="avatar-btn" onClick={() => setPersonaOpen((v) => !v)} aria-label="Switch persona">
-            <Avatar name={app.persona.name} color={app.persona.color} size={28} />
+          <button
+            className="avatar-btn"
+            onClick={() => setPersonaOpen((v) => !v)}
+            aria-label="Switch persona"
+          >
+            <Avatar name={app.rawPersona.name} color={app.rawPersona.color} size={28} />
           </button>
-          {personaOpen && (
-            <div className="persona-menu" style={{ right: 0, width: 300 }}>
-              <div className="persona-menu-head">
-                <div className="row-between">
-                  <span className="mono">SWITCH ACCOUNT ({app.personas.length})</span>
-                  <button type="button" className="link-btn" onClick={() => setShowNewAccount((v) => !v)}>
-                    {showNewAccount ? 'Cancel' : '+ New'}
-                  </button>
-                </div>
-              </div>
-              <div className="persona-scroll-list">
-                {app.personas.map((p) => (
-                  <button
-                    key={p.id}
-                    className={`persona-option ${p.id === app.persona.id ? 'is-active' : ''}`}
-                    onClick={() => {
-                      app.setPersona(p.id);
-                      setPersonaOpen(false);
-                    }}
-                  >
-                    <Avatar name={p.name} color={p.color} size={28} />
-                    <span>
-                      <strong>{p.name}</strong>
-                      <em>{personaSubtitle(p, app.state.clubs)}</em>
-                    </span>
-                    {p.id === app.persona.id && <Icon name="check" size={14} />}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {personaOpen && renderQuickAccountPopover(true)}
         </div>
       </div>
     </header>
@@ -512,6 +556,8 @@ export function TelegramHeader() {
   const app = useApp();
 
   const canGoBack =
+    Boolean(app.accountModalTab) ||
+    Boolean(app.tasksModalTab) ||
     Boolean(app.certificateTicketId) ||
     Boolean(app.activePostModal) ||
     Boolean(app.roleModalClubId) ||
@@ -519,6 +565,14 @@ export function TelegramHeader() {
     app.view !== 'explore';
 
   const handleBack = () => {
+    if (app.accountModalTab) {
+      app.closeAccountModal();
+      return;
+    }
+    if (app.tasksModalTab) {
+      app.closeTasksModal();
+      return;
+    }
     if (app.certificateTicketId) {
       app.closeCertificate();
       return;
@@ -565,3 +619,4 @@ export function TelegramHeader() {
     </div>
   );
 }
+

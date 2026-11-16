@@ -4,6 +4,7 @@ import {
   ALL_PERMISSIONS,
   availableRooms,
   canManage,
+  computeFreeRoomIntervals,
   findRoomConflicts,
   getAllRoleBadgesForUser,
   getCertificateRoleTitle,
@@ -88,6 +89,37 @@ test('getUserPermissionsForEvent, getAllRoleBadgesForUser & getCertificateRoleTi
   assert.equal(getCertificateRoleTitle(jasur, hackathon, clubs), 'Verified Participant');
 });
 
+test('studentLens masks organizer and club permissions cleanly for Student Preview Lens', () => {
+  const clubs = buildSeedClubs();
+  const events = buildSeedEvents();
+  const hackathon = events.find((e) => e.id === 'evt_1')!;
+  const firdavs = PERSONAS.find((p) => p.id === 'usr_1')!;
+  const lensFirdavs = { ...firdavs, role: 'student' as const, studentLens: true };
+
+  assert.equal(getUserPermissionsForClub(lensFirdavs, clubs[0]).length, 0);
+  assert.equal(getAllRoleBadgesForUser(lensFirdavs, clubs).length, 0);
+  assert.equal(getUserCanCreateOfficialEvents(lensFirdavs, clubs), false);
+  assert.equal(canManage(hackathon, lensFirdavs, clubs), false);
+});
+
+test('computeFreeRoomIntervals computes contiguous >= 60min free room windows', () => {
+  const events = buildSeedEvents();
+  const sample = {
+    ...events[0],
+    roomId: 'aud_a1',
+    date: '2026-06-10',
+    startTime: '11:00',
+    endTime: '14:00',
+    approvalStatus: 'approved' as const,
+  };
+  const gaps = computeFreeRoomIntervals([sample], 'aud_a1', '2026-06-10', 8 * 60, 20 * 60);
+  assert.equal(gaps.length, 2);
+  assert.equal(gaps[0].startTime, '08:00');
+  assert.equal(gaps[0].endTime, '11:00');
+  assert.equal(gaps[1].startTime, '14:00');
+  assert.equal(gaps[1].endTime, '20:00');
+});
+
 test('firstName, overlaps, Monday-first monthMatrix, availableRooms, and Tashkent UTC+5 icsTimestamp', () => {
   assert.equal(firstName('Soliyev Firdavs'), 'Firdavs');
   assert.equal(firstName('Malika Karimova'), 'Malika');
@@ -112,3 +144,4 @@ test('firstName, overlaps, Monday-first monthMatrix, availableRooms, and Tashken
   // Tashkent UTC+5: 10:00 Tashkent is 05:00 UTC
   assert.equal(icsTimestamp('2026-11-15', '10:00'), '20261115T050000Z');
 });
+

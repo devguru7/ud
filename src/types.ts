@@ -194,6 +194,10 @@ export interface Persona {
   clubId?: string;
   color: string;
   headlineRole?: string;
+  email?: string;
+  bio?: string;
+  linkedFirebaseUid?: string;
+  studentLens?: boolean;
 }
 
 export interface Room {
@@ -351,16 +355,47 @@ export interface Broadcast {
   recipients: number;
 }
 
+export type CampusTaskCategory = 'rsvp_prep' | 'coordinator_duty' | 'club_role' | 'personal';
+
+export interface CampusTask {
+  id: string;
+  userId: string;
+  title: string;
+  notes?: string;
+  dueDate: string;
+  dueTime?: string;
+  category: CampusTaskCategory;
+  linkedEventId?: string;
+  linkedClubId?: string;
+  completed: boolean;
+  syncedToGoogleTasks: boolean;
+  xpReward: number;
+}
+
+export interface RoleInviteCode {
+  code: string;
+  clubId: string;
+  clubShort: string;
+  roleId: string;
+  roleTitle: string;
+  badgeColor: string;
+  permissions: PermissionFlag[];
+  createdBy: string;
+}
+
 export interface PersistedState {
   version: number;
   theme: Theme;
   uiLang?: Lang;
   personaId: string;
+  studentViewLens?: boolean;
   personas?: Persona[];
   directory?: StudentDirectoryItem[];
   followedClubs: string[];
   savedEventIds?: string[];
   notifications?: AppNotification[];
+  tasks?: CampusTask[];
+  inviteCodes?: RoleInviteCode[];
   clubs: Club[];
   events: EventItem[];
   posts: CampusPost[];

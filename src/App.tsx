@@ -10,6 +10,8 @@ import HostStudio from './components/HostStudio';
 import EventDrawer from './components/EventDrawer';
 import CertificateModal from './components/Certificate';
 import { PostModal } from './components/Posts';
+import AccountModal from './components/AccountModal';
+import TasksAndQAModal from './components/TasksAndQAModal';
 import { ConfirmDialog, ToastStack } from './components/Overlays';
 import { Icon } from './components/UI';
 import { t } from './lib/labels';
@@ -88,6 +90,12 @@ function Footer() {
         in <span className="mono">localStorage</span> under <span className="mono">udea_pulse_state_v1</span> &amp; Firebase Cloud.
       </p>
       <div className="footer-actions">
+        <button className="link-btn" onClick={() => app.openAccountModal('profile')}>
+          <Icon name="shield" size={12} /> Account &amp; Role Center
+        </button>
+        <button className="link-btn" onClick={() => app.openTasksModal('qa')}>
+          <Icon name="check" size={12} /> 15-Point QA Suite
+        </button>
         <a href="https://udea.uz/" target="_blank" rel="noreferrer" className="link-btn">
           udea.uz <Icon name="external" size={12} />
         </a>
@@ -132,6 +140,8 @@ function Shell() {
       <EventDrawer />
       <PostModal />
       <RoleManagerModal />
+      <AccountModal />
+      <TasksAndQAModal />
       <CertificateModal />
       <ToastStack />
       <ConfirmDialog />

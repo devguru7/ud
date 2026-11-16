@@ -150,6 +150,7 @@ export function personaRoleLabel(personaOrRole: Persona | Role, clubs?: Club[]):
         ? 'Campus Admin'
         : 'Student';
   }
+  if (personaOrRole.studentLens) return 'Student Preview Lens';
   if (personaOrRole.role === 'admin') return 'Campus Admin';
   if (personaOrRole.role === 'club_lead') return 'Club President';
   if (clubs) {
@@ -160,6 +161,7 @@ export function personaRoleLabel(personaOrRole: Persona | Role, clubs?: Club[]):
 }
 
 export function personaSubtitle(persona: Persona, clubs?: Club[]): string {
+  if (persona.studentLens) return `${persona.programmeShort ?? 'Student'} · Student Preview Lens`;
   if (persona.role === 'admin') return 'Campus Coordinator · Student Affairs';
   if (persona.role === 'club_lead') return 'President · UDEA FinTech Society';
   if (clubs) {
